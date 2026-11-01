@@ -1,0 +1,33 @@
+name: traceleakcheck
+description: Fail the build if your app's OpenTelemetry export leaks canary secrets.
+branding:
+  icon: shield
+  color: red
+
+inputs:
+  args:
+    description: Extra pytest arguments, e.g. a test path or `-n auto`.
+    default: ""
+  report:
+    description: Where to write the JSON report.
+    default: traceleak-report.json
+
+outputs:
+  report:
+    description: Path of the JSON report.
+    value: ${{ inputs.report }}
+
+runs:
+  using: composite
+  steps:
+    # Run in the caller's Python environment, after their dependencies are installed.
+    # Inputs go through env, never straight into the script, to avoid shell injection.
+    - shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        REPORT: ${{ inputs.report }}
+        ARGS: ${{ inputs.args }}
+      run: |
+        python -m pip install --quiet "$ACTION_PATH"
+        # $ARGS is deliberately unquoted so it splits into separate pytest arguments.
+        python -m pytest --traceleak --traceleak-report="$REPORT" $ARGS

@@ -28,7 +28,7 @@ Every test that uses `canary` is checked after its fixtures tear down, so leaks 
 
 | Verdict | Meaning | Test |
 |---|---|---|
-| `clean` | The traces pipeline delivered the control span, and no canary was found in any signal | passes |
+| `clean` | Every configured pipeline delivered its control marker, and no canary was found | passes |
 | `leak` | A canary was found; the report names each field | fails |
 | `incomplete` | The positive-control span never arrived, so "clean" can't be claimed | fails |
 | `error` | An export couldn't be decoded, so the scan would under-report | fails |
@@ -36,7 +36,7 @@ Every test that uses `canary` is checked after its fixtures tear down, so leaks 
 In GitHub Actions, the verdict table is also written to the job summary.
 
 Limits:
-- **The positive control covers traces only.** A logs pipeline that is broken or turned off (`OTEL_LOGS_EXPORTER=none`) is not detected.
+- **The positive control covers every signal the app configured.** A control marker (span, log record or counter) is sent through each OTel SDK provider the app set up, and each one must arrive. If a working traces pipeline sits next to a broken logs pipeline, the result is `incomplete`, not `clean`. Metrics or logs that go somewhere other than OTLP (for example a Prometheus reader) can be skipped with `--traceleak-ignore=metrics`.
 - **Sampling is forced on through `OTEL_TRACES_SAMPLER=always_on`.** An app that passes an explicit sampler in code can still drop the span that leaks.
 
 ### Demo

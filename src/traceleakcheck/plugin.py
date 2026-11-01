@@ -12,7 +12,7 @@ from dataclasses import asdict
 import pytest
 
 from .canary import Canary, make_canary
-from .scanner import scan
+from .scanner import RAW_KEY, scan
 
 MARKER_SPAN = "traceleakcheck.marker"
 MARKER_ATTR = "traceleakcheck.nonce"
@@ -83,17 +83,34 @@ class TraceLeak:
             if flush is not None:
                 flush(timeout_millis=5000)
 
-    def check(self, nodeid: str, canaries: list[Canary]) -> dict:
+    def _pipelines(self, ignore: set[str]) -> list[tuple[str, object]]:
+        """(signal, provider) for each SDK provider the app configured. API no-op/proxy
+        providers have no force_flush: the app set nothing up for that signal."""
+        out = []
+        for p in self._all_providers():
+            if not hasattr(p, "force_flush"):
+                continue
+            for signal, method in (("traces", "get_tracer"), ("logs", "get_logger"), ("metrics", "get_meter")):
+                if hasattr(p, method) and signal not in ignore:
+                    out.append((signal, p))
+                    break
+        return out
+
+    def check(self, nodeid: str, canaries: list[Canary], ignore: set[str] = frozenset()) -> dict:
         from .receiver import ReceiverError
 
-        providers = self._all_providers()
-        # Positive control: a marker span sent through the app's own pipeline must arrive.
-        # The nonce is unique per check, so a late export from another test can't satisfy it.
+        pipelines = self._pipelines(ignore)
+        # Positive control: a marker sent through EVERY configured pipeline must arrive, or a
+        # broken logs pipeline could hide a leak behind a working traces pipeline. The nonce is
+        # unique per check, so a late export from another test can't satisfy it.
         nonce = secrets.token_hex(8)
-        for p in providers:
-            if hasattr(p, "get_tracer") and hasattr(p, "force_flush"):
-                p.get_tracer("traceleakcheck").start_span(MARKER_SPAN, attributes={MARKER_ATTR: nonce}).end()
-        self._flush(providers)
+        unverifiable = []
+        for signal, p in pipelines:
+            try:
+                _emit_marker(signal, p, nonce)
+            except Exception as exc:  # e.g. an SDK whose logs API predates LogRecord(body=...)
+                unverifiable.append(f"{signal} ({exc!r})")
+        self._flush(self._all_providers())
         result = {"nodeid": nodeid, "status": "clean", "findings": [], "detail": ""}
         try:
             payloads = self.receiver.snapshot()
@@ -102,29 +119,35 @@ class TraceLeak:
         findings = scan(payloads, canaries)
         if findings:
             return result | {"status": "leak", "findings": [asdict(f) for f in findings]}
-        if not _has_marker(payloads, nonce):
+        if not pipelines:
             return result | {
                 "status": "incomplete",
-                "detail": "no telemetry reached traceleakcheck, so a clean result can't be claimed. "
-                "Is the OTel SDK configured from OTEL_EXPORTER_OTLP_* env vars, or registered "
-                "with traceleak.watch(provider)?",
+                "detail": "no OTel SDK provider is configured, so nothing could be exported and a clean "
+                "result can't be claimed. Configure the SDK, or register providers with traceleak.watch().",
+            }
+        arrived = {s for s, data in payloads if nonce in data.get(RAW_KEY, "")}
+        missing = sorted({s for s, _ in pipelines} - arrived)
+        if missing or unverifiable:
+            why = [f"the control marker never arrived on: {', '.join(missing)}"] if missing else []
+            why += [f"couldn't send the control marker on {u}" for u in unverifiable]
+            return result | {
+                "status": "incomplete",
+                "detail": "; ".join(why) + ". Is that exporter pointed at OTEL_EXPORTER_OTLP_* "
+                "(or skip the signal with --traceleak-ignore)?",
             }
         return result
 
 
-def _has_marker(payloads, nonce: str) -> bool:
-    for signal, data in payloads:
-        if signal != "traces":
-            continue
-        for rs in data.get("resourceSpans", []):
-            for ss in rs.get("scopeSpans", []):
-                for s in ss.get("spans", []):
-                    if s.get("name") == MARKER_SPAN and any(
-                        a.get("key") == MARKER_ATTR and a.get("value", {}).get("stringValue") == nonce
-                        for a in s.get("attributes", [])
-                    ):
-                        return True
-    return False
+def _emit_marker(signal: str, provider, nonce: str) -> None:
+    attrs = {MARKER_ATTR: nonce}
+    if signal == "traces":
+        provider.get_tracer("traceleakcheck").start_span(MARKER_SPAN, attributes=attrs).end()
+    elif signal == "logs":
+        from opentelemetry._logs import LogRecord
+
+        provider.get_logger("traceleakcheck").emit(LogRecord(body=MARKER_SPAN, attributes=attrs))
+    else:
+        provider.get_meter("traceleakcheck").create_counter(MARKER_SPAN).add(1, attrs)
 
 
 def _describe(f: dict) -> str:
@@ -140,6 +163,9 @@ def pytest_addoption(parser):
     group.addoption("--traceleak", action="store_true",
                     help="point OTLP exporters at a local receiver and fail tests whose canaries leak")
     group.addoption("--traceleak-report", metavar="PATH", help="write a JSON report of every checked test")
+    group.addoption("--traceleak-ignore", metavar="SIGNALS", default="",
+                    help="comma list of signals (traces,logs,metrics) not to require a control marker on, "
+                    "e.g. metrics exported by a Prometheus reader instead of OTLP")
 
 
 @pytest.hookimpl(tryfirst=True)
@@ -195,7 +221,8 @@ def pytest_runtest_teardown(item, nextitem):
     canaries = item.stash.get(_CANARIES, None)
     if tl is None or not canaries:
         return out
-    result = tl.check(item.nodeid, canaries)
+    ignore = {s.strip() for s in item.config.getoption("traceleak_ignore").split(",") if s.strip()}
+    result = tl.check(item.nodeid, canaries, ignore)
     item.user_properties.append((_PROP, result))
     if result["status"] == "leak":
         lines = "\n  - ".join(_describe(f) for f in result["findings"])

@@ -102,3 +102,61 @@ def test_xdist_workers_report_to_controller(pytester):
     r.stdout.fnmatch_lines(["*1 clean, 1 leak, 0 incomplete, 0 error*"])
     rep = json.loads((pytester.path / "rep.json").read_text())
     assert rep["summary"]["leak"] == 1 and rep["summary"]["clean"] == 1
+
+
+LOGS_HEADER = """
+import logging
+from opentelemetry._logs import set_logger_provider
+from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
+from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
+from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
+
+ENDPOINT = None  # None = from env
+lp = LoggerProvider()
+lp.add_log_record_processor(BatchLogRecordProcessor(OTLPLogExporter(endpoint=ENDPOINT)))
+set_logger_provider(lp)
+log = logging.getLogger("app")
+log.addHandler(LoggingHandler(logger_provider=lp))
+log.setLevel(logging.INFO)
+"""
+LOG_RUN = "def run(k):\n    log.info('calling with %s', k)\n"
+TEST_RUN = "from app import run\ndef test_it(canary):\n    run(canary().value)\n"
+
+
+def test_logs_only_app_leak_found(pytester):
+    _make(pytester, LOG_RUN, TEST_RUN, header=LOGS_HEADER)
+    r = pytester.runpytest_subprocess("--traceleak", "-W", "ignore::DeprecationWarning")
+    r.stdout.fnmatch_lines(["*TRACELEAK LEAK*", "*canary (raw) in logs at*"])
+
+
+def test_logs_only_app_clean(pytester):
+    _make(pytester, "def run(k):\n    log.info('calling model')\n", TEST_RUN, header=LOGS_HEADER)
+    r = pytester.runpytest_subprocess("--traceleak", "-W", "ignore::DeprecationWarning")
+    r.assert_outcomes(passed=1)
+    r.stdout.fnmatch_lines(["*1 clean, 0 leak*"])
+
+
+def test_broken_logs_pipeline_is_incomplete_even_with_working_traces(pytester):
+    header = APP_HEADER + LOGS_HEADER.replace("ENDPOINT = None", "ENDPOINT = 'http://127.0.0.1:9/v1/logs'")
+    _make(pytester, LOG_RUN, TEST_RUN, header=header)
+    r = pytester.runpytest_subprocess("--traceleak", "-W", "ignore::DeprecationWarning")
+    r.assert_outcomes(passed=1, errors=1)
+    r.stdout.fnmatch_lines(["*TRACELEAK INCOMPLETE*never arrived on: logs*"])
+
+
+METRICS_HEADER = APP_HEADER + """
+from opentelemetry import metrics
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import InMemoryMetricReader
+
+metrics.set_meter_provider(MeterProvider(metric_readers=[InMemoryMetricReader()]))  # not OTLP
+"""
+TRACE_RUN = "def run(k):\n    with tracer.start_as_current_span('chat'):\n        pass\n"
+
+
+def test_non_otlp_metrics_reader_is_incomplete_unless_ignored(pytester):
+    _make(pytester, TRACE_RUN, TEST_RUN, header=METRICS_HEADER)
+    r = pytester.runpytest_subprocess("--traceleak")
+    r.stdout.fnmatch_lines(["*never arrived on: metrics*"])
+    r = pytester.runpytest_subprocess("--traceleak", "--traceleak-ignore=metrics")
+    r.assert_outcomes(passed=1)

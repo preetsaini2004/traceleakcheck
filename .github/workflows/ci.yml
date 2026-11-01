@@ -1,0 +1,42 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --python ${{ matrix.python }}
+      - run: uv run pytest -q
+
+  action:
+    # The demo agent leaks on purpose: this job proves the Action fails the build when it should.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install opentelemetry-sdk opentelemetry-exporter-otlp-proto-http
+      - id: demo
+        uses: ./
+        continue-on-error: true
+        with:
+          args: examples/demo_agent
+      - name: Action must have caught the demo leak
+        shell: bash
+        run: |
+          test "${{ steps.demo.outcome }}" = failure
+          python -c "import json,sys; s=json.load(open('traceleak-report.json'))['summary']; sys.exit(0 if s['leak']==1 else 1)"
