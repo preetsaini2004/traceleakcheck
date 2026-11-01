@@ -69,11 +69,20 @@ def _field(f: dict) -> str:
     return f"{f['signal'][:-1]}: {name}"
 
 
-def cell(report: dict | None, test: str) -> str:
+# Configs where message content is supposed to be captured. In these, a "clean" content scenario
+# means the capture setting silently did nothing; the first run hit exactly that with openai-v2 `=true`.
+CAPTURES_CONTENT = {("otel-openai-v2", "content"), ("openllmetry", "default"),
+                    ("openinference", "default"), ("logfire", "default")}
+CONTENT_SCENARIOS = {t for t, _ in SCENARIOS[:3]}
+
+
+def cell(report: dict | None, test: str, config: tuple[str, str]) -> str:
     if report is None:
         return "run failed"
     for r in report["results"]:
         if r["nodeid"].endswith("::" + test):
+            if r["status"] == "clean" and config in CAPTURES_CONTENT and test in CONTENT_SCENARIOS:
+                return "MISCONFIGURED (capture expected, nothing captured)"
             if r["status"] != "leak":
                 return r["status"]
             fields = sorted({_field(f) for f in r["findings"]})
@@ -91,7 +100,7 @@ def render(results: dict) -> str:
              "| Scenario | " + " | ".join(f"{lib}<br>{mode}" for lib, mode in cols) + " |",
              "|---|" + "---|" * len(cols)]
     for test, label in SCENARIOS:
-        lines.append(f"| {label} | " + " | ".join(cell(results[c], test) for c in cols) + " |")
+        lines.append(f"| {label} | " + " | ".join(cell(results[c], test, c) for c in cols) + " |")
     lines += ["", "Versions: " + ", ".join(f"{k} {v}" for k, v in versions.items()), ""]
     return "\n".join(lines)
 

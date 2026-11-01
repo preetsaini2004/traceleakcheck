@@ -71,7 +71,7 @@ with OTLPReceiver() as rx:
 - **No content opt-out we tested stops a secret in an error message.** That includes `TRACELOOP_TRACE_CONTENT=false`, `OPENINFERENCE_HIDE_*` and `NO_CONTENT`.
 - **`?key=` query auth is exported verbatim** in `http.url`.
 - **Logfire's default scrubbing skips LLM messages and exception messages**, even when they contain "API key".
-- **The OTel openai-v2 README's `CAPTURE_MESSAGE_CONTENT=true` is silently rejected** by 2.4b0.
+- **OTel openai-v2's documented legacy `CAPTURE_MESSAGE_CONTENT=true` falls back to `NO_CONTENT`** on util-genai 1.x, with only a log warning.
 
 ## Compared to Weir
 
