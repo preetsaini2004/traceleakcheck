@@ -29,6 +29,19 @@ dev = [
     "opentelemetry-exporter-otlp-proto-http>=1.27",
     "pytest-xdist>=3",
 ]
+# Instrumentation leak survey (survey/). openai<3: 3.x moved to httpx2, which
+# opentelemetry-instrumentation-openai-v2 2.4b0 can't import.
+survey = [
+    "openai>=2,<3",
+    "opentelemetry-instrumentation-openai-v2",
+    # openai-v2 2.4b0 imports util.genai.instruments, which util-genai 1.2b0+ no longer ships;
+    # an unpinned install fails at import (checked 2026-11-01).
+    "opentelemetry-util-genai==1.1b0",
+    "opentelemetry-instrumentation-openai",
+    "openinference-instrumentation-openai",
+    "opentelemetry-instrumentation-httpx",
+    "logfire",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/traceleakcheck"]

@@ -64,6 +64,15 @@ with OTLPReceiver() as rx:
     findings = scan(rx.snapshot(), [canary])
 ```
 
+## Survey: do GenAI instrumentations leak secrets?
+
+[survey/FINDINGS.md](survey/FINDINGS.md) runs the OpenAI SDK under OTel openai-v2, OpenLLMetry, OpenInference, Logfire and httpx instrumentation, across 6 leak scenarios. Headlines:
+
+- **No content opt-out we tested stops a secret in an error message.** That includes `TRACELOOP_TRACE_CONTENT=false`, `OPENINFERENCE_HIDE_*` and `NO_CONTENT`.
+- **`?key=` query auth is exported verbatim** in `http.url`.
+- **Logfire's default scrubbing skips LLM messages and exception messages**, even when they contain "API key".
+- **The OTel openai-v2 README's `CAPTURE_MESSAGE_CONTENT=true` is silently rejected** by 2.4b0.
+
 ## Compared to Weir
 
 [Weir](https://github.com/IdoGol24/weir) uses the same canary idea. It is broader: it runs agent flows against a fake model and checks console output and network requests as well as telemetry. TraceLeakCheck focuses on the OTLP export boundary and needs no fake model.

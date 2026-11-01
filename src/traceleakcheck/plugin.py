@@ -56,15 +56,15 @@ class TraceLeak:
             os.environ[k] = v
 
     def close(self) -> None:
-        # Drain the app's exporters while the receiver is still up, so their exit-time
-        # flush has nothing left to send to a closed port.
         self._flush(self._all_providers())
         for k, v in self._saved_env.items():
             if v is None:
                 os.environ.pop(k, None)
             else:
                 os.environ[k] = v
-        self.receiver.stop()
+        # Deliberately not stopping the receiver: SDK providers export once more from their
+        # atexit shutdown (metric readers always do), and a closed port turns that into retry
+        # noise and delay. Its serve thread is a daemon and dies with the process.
 
     def _all_providers(self) -> list:
         found = list(self.providers)
