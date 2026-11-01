@@ -1,0 +1,104 @@
+"""End-to-end plugin tests. Subprocess runs: the OTel global provider can be set once per process."""
+
+import json
+
+APP_HEADER = """
+from opentelemetry import trace
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+provider = TracerProvider()
+provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
+trace.set_tracer_provider(provider)
+tracer = trace.get_tracer("app")
+"""
+
+
+def _make(pytester, app_body, test_body, header=APP_HEADER):
+    pytester.makepyfile(app=header + app_body, test_app=test_body)
+
+
+def test_leak_fails_test_and_names_field(pytester):
+    _make(pytester,
+          "def run(k):\n    with tracer.start_as_current_span('chat') as s:\n        s.set_attribute('prompt', k)\n",
+          "from app import run\ndef test_it(canary):\n    run(canary('aws').value)\n")
+    r = pytester.runpytest_subprocess("--traceleak")
+    r.assert_outcomes(passed=1, errors=1)
+    r.stdout.fnmatch_lines(["*TRACELEAK LEAK*", "*aws canary (raw) in span 'chat'*attributes[[]prompt]*"])
+
+
+def test_leak_found_even_when_app_env_samples_nothing(pytester, monkeypatch):
+    monkeypatch.setenv("OTEL_TRACES_SAMPLER", "traceidratio")
+    monkeypatch.setenv("OTEL_TRACES_SAMPLER_ARG", "0")
+    _make(pytester,
+          "def run(k):\n    with tracer.start_as_current_span('chat') as s:\n        s.set_attribute('prompt', k)\n",
+          "from app import run\ndef test_it(canary):\n    run(canary().value)\n")
+    r = pytester.runpytest_subprocess("--traceleak")
+    r.stdout.fnmatch_lines(["*TRACELEAK LEAK*"])
+
+
+def test_redacted_app_is_clean(pytester):
+    _make(pytester,
+          "def run(k):\n    with tracer.start_as_current_span('chat') as s:\n        s.set_attribute('prompt', '[REDACTED]')\n",
+          "from app import run\ndef test_it(canary):\n    run(canary().value)\n")
+    r = pytester.runpytest_subprocess("--traceleak")
+    r.assert_outcomes(passed=1)
+    r.stdout.fnmatch_lines(["*1 clean, 0 leak, 0 incomplete, 0 error*"])
+
+
+def test_unconfigured_app_is_incomplete_not_clean(pytester):
+    _make(pytester, "def run(k):\n    pass\n", "from app import run\ndef test_it(canary):\n    run(canary().value)\n",
+          header="")
+    r = pytester.runpytest_subprocess("--traceleak")
+    r.assert_outcomes(passed=1, errors=1)
+    r.stdout.fnmatch_lines(["*TRACELEAK INCOMPLETE*"])
+
+
+def test_canary_without_flag_errors_clearly(pytester):
+    pytester.makepyfile(test_app="def test_it(canary):\n    canary()\n")
+    r = pytester.runpytest_subprocess()
+    r.assert_outcomes(errors=1)
+    r.stdout.fnmatch_lines(["*run pytest with --traceleak*"])
+
+
+def test_leak_in_failing_test_still_reported(pytester):
+    _make(pytester,
+          "def run(k):\n    with tracer.start_as_current_span('chat') as s:\n        s.set_attribute('p', k)\n",
+          "from app import run\ndef test_it(canary):\n    run(canary().value)\n    assert False\n")
+    r = pytester.runpytest_subprocess("--traceleak", "--traceleak-report=rep.json")
+    r.assert_outcomes(failed=1, errors=1)
+    rep = json.loads((pytester.path / "rep.json").read_text())
+    assert rep["summary"]["leak"] == 1
+
+
+def test_demo_agent_leaks_via_exception(pytester):
+    import pathlib
+    demo = pathlib.Path(__file__).parent.parent / "examples" / "demo_agent"
+    for f in ("app.py", "test_agent.py"):
+        (pytester.path / f).write_text((demo / f).read_text())
+    r = pytester.runpytest_subprocess("--traceleak")
+    r.assert_outcomes(passed=2, errors=1)
+    r.stdout.fnmatch_lines(["*span 'llm.call' at *status.message*"])
+
+
+def test_leak_during_fixture_teardown_caught(pytester):
+    _make(pytester,
+          "def run(k):\n    with tracer.start_as_current_span('close') as s:\n        s.set_attribute('p', k)\n",
+          "import pytest\nfrom app import run\n"
+          "@pytest.fixture\ndef client(canary):\n    c = canary()\n    yield c\n    run(c.value)  # leaks on close\n"
+          "def test_it(client):\n    pass\n")
+    r = pytester.runpytest_subprocess("--traceleak")
+    r.assert_outcomes(passed=1, errors=1)
+    r.stdout.fnmatch_lines(["*span 'close'*"])
+
+
+def test_xdist_workers_report_to_controller(pytester):
+    _make(pytester,
+          "def run(k):\n    with tracer.start_as_current_span('chat') as s:\n        s.set_attribute('p', k)\n",
+          "from app import run\ndef test_a(canary):\n    run(canary().value)\n"
+          "def test_b(canary):\n    canary()\n    run('safe')\n")
+    r = pytester.runpytest_subprocess("--traceleak", "-n", "2", "--traceleak-report=rep.json")
+    r.stdout.fnmatch_lines(["*1 clean, 1 leak, 0 incomplete, 0 error*"])
+    rep = json.loads((pytester.path / "rep.json").read_text())
+    assert rep["summary"]["leak"] == 1 and rep["summary"]["clean"] == 1
