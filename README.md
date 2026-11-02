@@ -1,10 +1,11 @@
-<p align="center"><img src="docs/readme/banner.svg" alt="TraceLeakCheck: catch secrets leaking through your AI app's OpenTelemetry, before they ship" width="100%"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/preetsaini2004/traceleakcheck/main/docs/readme/banner.svg" alt="TraceLeakCheck: catch secrets leaking through your AI app's OpenTelemetry, before they ship" width="100%"></p>
 
 <p align="center">
   <a href="https://github.com/preetsaini2004/traceleakcheck/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/preetsaini2004/traceleakcheck/actions/workflows/ci.yml/badge.svg"></a>
   <img alt="Python 3.10 to 3.14" src="https://img.shields.io/badge/python-3.10%E2%80%933.14-3776ab?logo=python&logoColor=white">
   <img alt="pytest plugin" src="https://img.shields.io/badge/pytest-plugin-0a9edc?logo=pytest&logoColor=white">
   <img alt="OpenTelemetry" src="https://img.shields.io/badge/OpenTelemetry-OTLP%20HTTP%20%2B%20gRPC-f5a800?logo=opentelemetry&logoColor=white">
+  <a href="https://pypi.org/project/traceleakcheck/"><img alt="PyPI" src="https://img.shields.io/pypi/v/traceleakcheck?color=3775a9"></a>
   <img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-blue">
 </p>
 
@@ -13,7 +14,7 @@
   <a href="#how-it-works">How it works</a> ·
   <a href="#fix-it-the-safety-filter">Safety filter</a> ·
   <a href="#tested-on-real-code">Real-world test</a> ·
-  <a href="survey/FINDINGS.md">Survey</a>
+  <a href="https://github.com/preetsaini2004/traceleakcheck/blob/main/survey/FINDINGS.md">Survey</a>
 </p>
 
 ---
@@ -22,7 +23,7 @@ Your AI app's monitoring data (OpenTelemetry traces and logs) records prompts, t
 
 **TraceLeakCheck plants a fake secret, captures everything your app really exports, and tells you in plain English exactly where it leaked.**
 
-<p align="center"><img src="docs/readme/terminal.png" alt="Before: 1 leak found in the error message, stack trace and status of step llm.call. After wrapping the exporter with scrub(): 1 clean." width="900"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/preetsaini2004/traceleakcheck/main/docs/readme/terminal.png" alt="Before: 1 leak found in the error message, stack trace and status of step llm.call. After wrapping the exporter with scrub(): 1 clean." width="900"></p>
 
 ## What you get
 
@@ -35,7 +36,7 @@ Your AI app's monitoring data (OpenTelemetry traces and logs) records prompts, t
 ## Quick start
 
 ```sh
-pip install git+https://github.com/preetsaini2004/traceleakcheck
+pip install traceleakcheck
 ```
 
 ```python
@@ -55,12 +56,12 @@ If your app configures OpenTelemetry from the standard `OTEL_EXPORTER_OTLP_*` se
 <details>
 <summary><b>The HTML report</b></summary>
 <br>
-<p align="center"><img src="docs/readme/report.png" alt="HTML report: a red card says your OpenAI API key leaked in 3 places in step llm.call, with how-to-fix tips and copyable code" width="720"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/preetsaini2004/traceleakcheck/main/docs/readme/report.png" alt="HTML report: a red card says your OpenAI API key leaked in 3 places in step llm.call, with how-to-fix tips and copyable code" width="720"></p>
 </details>
 
 ## How it works
 
-<p align="center"><img src="docs/readme/how-it-works.svg" alt="How it works: a canary fake key goes into your unchanged app, the app exports OTLP over HTTP or gRPC to a local receiver, every field is scanned, and the result is leak, clean or incomplete" width="100%"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/preetsaini2004/traceleakcheck/main/docs/readme/how-it-works.svg" alt="How it works: a canary fake key goes into your unchanged app, the app exports OTLP over HTTP or gRPC to a local receiver, every field is scanned, and the result is leak, clean or incomplete" width="100%"></p>
 
 1. **Before your `conftest.py` loads**, `--traceleak` starts a receiver and points the app's exporters at it.
 2. **Each test** that asks for a `canary` gets unique fake secrets in realistic formats: OpenAI, Anthropic, AWS, GitHub, JWT or password.
@@ -75,7 +76,7 @@ Each test gets one verdict:
 | ⚠️ `incomplete` | A pipeline's control marker never arrived, or a span was still open at the end of the test (open spans are never exported), so "clean" can't be claimed | fails |
 | ⚠️ `error` | An export couldn't be decoded, so a scan would under-report | fails |
 
-pytest shows a failed check as `ERROR at teardown`, because it runs after the fixtures finish. It works with `pytest -n` (xdist). In GitHub Actions the verdicts also go to the job summary, and there's a ready-made [action](action.yml).
+pytest shows a failed check as `ERROR at teardown`, because it runs after the fixtures finish. It works with `pytest -n` (xdist). In GitHub Actions the verdicts also go to the job summary, and there's a ready-made [action](https://github.com/preetsaini2004/traceleakcheck/blob/main/action.yml).
 
 ## Fix it: the safety filter
 
@@ -108,7 +109,7 @@ One secret becomes many copies, because every layer of an agent (chat step, agen
 
 ## Survey: do GenAI instrumentations leak secrets?
 
-[survey/FINDINGS.md](survey/FINDINGS.md) runs the OpenAI SDK under OTel openai-v2, OpenLLMetry, OpenInference, Logfire and httpx instrumentation, across 6 leak scenarios:
+[survey/FINDINGS.md](https://github.com/preetsaini2004/traceleakcheck/blob/main/survey/FINDINGS.md) runs the OpenAI SDK under OTel openai-v2, OpenLLMetry, OpenInference, Logfire and httpx instrumentation, across 6 leak scenarios:
 
 - **No content opt-out we tested stops a secret in an error message.** That includes `TRACELOOP_TRACE_CONTENT=false`, `OPENINFERENCE_HIDE_*` and `NO_CONTENT`.
 - **`?key=` query auth is exported verbatim** in `http.url`.
