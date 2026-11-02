@@ -4,17 +4,33 @@ build-backend = "hatchling.build"
 
 [project]
 name = "traceleakcheck"
-version = "0.1.0.dev0"
+version = "0.1.0"
 description = "Prove your AI app's OpenTelemetry export doesn't leak secrets: canary secrets + a local OTLP receiver, in pytest."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "Apache-2.0"
+authors = [{ name = "Preet Saini" }]
+keywords = ["opentelemetry", "otlp", "pytest", "secrets", "llm", "security", "observability", "canary"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Framework :: Pytest",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Topic :: Security",
+    "Topic :: Software Development :: Testing",
+    "Topic :: System :: Monitoring",
+]
 dependencies = [
     "opentelemetry-api>=1.27",
     "opentelemetry-proto>=1.27",
     "protobuf>=5.26",
     "pytest>=8",
 ]
+
+[project.urls]
+Homepage = "https://github.com/preetsaini2004/traceleakcheck"
+Changelog = "https://github.com/preetsaini2004/traceleakcheck/blob/main/CHANGELOG.md"
+Issues = "https://github.com/preetsaini2004/traceleakcheck/issues"
 
 [project.entry-points.pytest11]
 traceleakcheck = "traceleakcheck.plugin"
