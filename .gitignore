@@ -8,3 +8,4 @@ survey/results/
 report.html
 node_modules/
 examples/collector/otelcol.log
+reports/report.md
