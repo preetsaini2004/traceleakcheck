@@ -42,13 +42,6 @@ jobs:
       - name: Action must have caught the demo leak
         shell: bash
         run: |
-          f="otelcol-contrib_${OTELCOL_VERSION}_linux_amd64.tar.gz"
-          base="https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v${OTELCOL_VERSION}"
-          curl -sSfLO "$base/$f" -O "$base/$f.sha256"
-          # The .sha256 file holds only the hash, so build the "hash  file" line sha256sum -c expects.
-          echo "$(cut -d" " -f1 "$f.sha256")  $f" | sha256sum -c -
-          tar -xzf "$f" otelcol-contrib
-|
           test "${{ steps.demo.outcome }}" = failure
           python -c "import json,sys; s=json.load(open('traceleak-report.json'))['summary']; sys.exit(0 if s['leak']==1 else 1)"
 
