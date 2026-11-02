@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="400" viewBox="0 0 1280 400" role="img" aria-label="TraceLeakCheck: catch secrets leaking through your AI app's telemetry">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b0f14"/>
+      <stop offset="1" stop-color="#121a24"/>
+    </linearGradient>
+    <linearGradient id="beam" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ffb000" stop-opacity="0"/>
+      <stop offset="0.5" stop-color="#ffb000" stop-opacity="0.9"/>
+      <stop offset="1" stop-color="#ff4d3d" stop-opacity="0.9"/>
+    </linearGradient>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M32 0H0V32" fill="none" stroke="#ffffff" stroke-opacity="0.04"/>
+    </pattern>
+  </defs>
+  <rect width="1280" height="400" fill="url(#bg)"/>
+  <rect width="1280" height="400" fill="url(#grid)"/>
+
+  <!-- title -->
+  <text x="72" y="150" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="68" font-weight="700" fill="#f2f4f7">Trace<tspan fill="#ffb000">Leak</tspan>Check</text>
+  <text x="74" y="200" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="26" fill="#a9b4c2">Catch secrets leaking through your AI app's</text>
+  <text x="74" y="236" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="26" fill="#a9b4c2">OpenTelemetry, before they ship.</text>
+
+  <!-- find / fix / prove chips -->
+  <g font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="18" font-weight="600">
+    <rect x="72" y="282" width="118" height="40" rx="20" fill="#3a1d18"/>
+    <text x="131" y="308" text-anchor="middle" fill="#ff7a66">FIND</text>
+    <rect x="204" y="282" width="118" height="40" rx="20" fill="#352a12"/>
+    <text x="263" y="308" text-anchor="middle" fill="#f0be5a">FIX</text>
+    <rect x="336" y="282" width="118" height="40" rx="20" fill="#16301f"/>
+    <text x="395" y="308" text-anchor="middle" fill="#6fd18f">PROVE</text>
+  </g>
+
+  <!-- the trace: a span tree with a canary flowing out of it -->
+  <g font-family="Consolas, Menlo, monospace" font-size="17">
+    <rect x="720" y="70" width="488" height="262" rx="14" fill="#0d131b" stroke="#2a3542"/>
+    <circle cx="746" cy="94" r="6" fill="#ff5f57"/><circle cx="766" cy="94" r="6" fill="#febc2e"/><circle cx="786" cy="94" r="6" fill="#28c840"/>
+    <text x="756" y="140" fill="#7d8a99">agent.run</text>
+    <rect x="756" y="150" width="400" height="6" rx="3" fill="#2a3542"/>
+    <text x="786" y="190" fill="#7d8a99">llm.call</text>
+    <rect x="786" y="200" width="300" height="6" rx="3" fill="#ff4d3d" fill-opacity="0.75"/>
+    <text x="786" y="240" fill="#ff7a66">exception.message:</text>
+    <text x="786" y="266" fill="#f2f4f7">"...?key=<tspan fill="#ffb000">sk-proj-cnry…</tspan>"</text>
+    <rect x="756" y="290" width="186" height="28" rx="6" fill="#3a1d18"/>
+    <text x="849" y="309" text-anchor="middle" font-size="15" font-weight="700" fill="#ff7a66">LEAK FOUND</text>
+  </g>
+  <rect x="628" y="196" width="92" height="4" fill="url(#beam)"/>
+  <circle cx="628" cy="198" r="9" fill="#ffb000"/>
+</svg>
