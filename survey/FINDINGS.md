@@ -39,7 +39,9 @@ None of them stopped a secret inside an **error message**. Every instrumentation
 
 `opentelemetry-util-http` 0.66b2 redacts only `AWSAccessKeyId`, `Signature`, `sig` and `X-Goog-Signature` (`PARAMS_TO_REDACT`). That is a subset of the 7 keys the [semantic conventions](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/registry/attributes/url.md) say SHOULD be redacted; the three `X-Amz-*` keys are missing. Neither list includes `key`.
 
-APIs that take their key as `?key=` therefore get it written into `http.url` / `url.full`. Examples are gateways and several Google REST APIs. The GenAI instrumentations didn't record URLs at all in our runs.
+The missing `X-Amz-*` keys mean an S3/SigV4 presigned URL is exported with its signature, credential scope and STS session token. We verified this with `opentelemetry-instrumentation-httpx` 0.66b2 on 2026-11-02; no existing upstream issue covers it (closest: [#2992](https://github.com/open-telemetry/opentelemetry-python-contrib/issues/2992)).
+
+APIs that take their key as `?key=` get it written into `http.url` / `url.full`. Examples are gateways and several Google REST APIs. The GenAI instrumentations didn't record URLs at all in our runs.
 
 ### 3. Logfire does not scrub LLM messages or exception messages
 
@@ -62,11 +64,13 @@ The README describes `span_only` as applying only when `OTEL_SEMCONV_STABILITY_O
 
 This failure goes the safe direction (less data). But a team that thinks it is auditing captured content is auditing nothing. It also nearly fooled this survey: our first run reported openai-v2 "content" as clean. traceleakcheck's positive control proves telemetry *arrived*; it can't tell that a library was configured to capture nothing. That's why the survey now checks that captures were expected.
 
-Related but different: [#4038](https://github.com/open-telemetry/opentelemetry-python-contrib/issues/4038), where `span_and_event` captured nothing, fixed in July 2026. A search on 2026-11-01 found no existing issue for the `=true` rejection.
+Related but different: [#4038](https://github.com/open-telemetry/opentelemetry-python-contrib/issues/4038), where `span_and_event` captured nothing, fixed in July 2026.
+
+**Status (checked 2026-11-02):** openai-v2 has moved to the [opentelemetry-python-genai](https://github.com/open-telemetry/opentelemetry-python-genai) repo as `opentelemetry-instrumentation-genai-openai` (1.3b0). Its README no longer documents `=true`; it lists only `span_only`, `event_only`, `span_and_event` and `no_content`. The stale docs therefore apply only to the old `openai-v2` package on PyPI.
 
 ### 5. A fresh install of OTel openai-v2 fails to import
 
-`pip install opentelemetry-instrumentation-openai-v2` (2.4b0) resolves `opentelemetry-util-genai` 1.3b0. That version doesn't ship `opentelemetry.util.genai.instruments` (1.2b0 doesn't either), so the import fails with `ModuleNotFoundError`. The cause is that openai-v2 requires only `opentelemetry-util-genai>=0.4b0.dev`, with no upper bound. Pinning `opentelemetry-util-genai==1.1b0` works. openai-v2 2.4b0 (2026-05-01) is the latest release. A search on 2026-11-01 found no existing issue for this.
+`pip install opentelemetry-instrumentation-openai-v2` (2.4b0) resolves `opentelemetry-util-genai` 1.3b0. That version doesn't ship `opentelemetry.util.genai.instruments` (1.2b0 doesn't either), so the import fails with `ModuleNotFoundError`. The cause is that openai-v2 requires only `opentelemetry-util-genai>=0.4b0.dev`, with no upper bound. Pinning `opentelemetry-util-genai==1.1b0` works. openai-v2 2.4b0 (2026-05-01) is the last release under that name; the successor is `opentelemetry-instrumentation-genai-openai`. Already reported upstream as [opentelemetry-python-genai#997](https://github.com/open-telemetry/opentelemetry-python-genai/issues/997) (2026-10-28).
 
 Separately, openai-v2 imports `httpx`, which the `openai` SDK 3.x no longer depends on (it moved to `httpx2`). We tested on openai 2.54.0 for that reason.
 
@@ -77,7 +81,7 @@ Separately, openai-v2 imports `httpx`, which the `openai` SDK 3.x no longer depe
 **Abandoned stream.** Here the app reads only the first chunk and drops the stream.
 - **OpenLLMetry and OpenInference** end the span and export what was received, including the secret.
 - **Logfire** ends the span without the partial reply, so that result is genuinely clean.
-- **OTel openai-v2 leaves the span open.** An open span is never exported, so whatever it holds is invisible to any exporter, and to any leak checker.
+- **OTel openai-v2 leaves the span open.** An open span is never exported, so whatever it holds is invisible to any exporter, and to any leak checker. Upstream tracks this for every util-genai stream wrapper in [opentelemetry-python-genai#491](https://github.com/open-telemetry/opentelemetry-python-genai/issues/491).
 
 In our first streaming run, that openai-v2 case came back as a **false "clean"**. traceleakcheck now tracks spans that start during a test and never end, and reports `incomplete` ("1 span(s) were still open … 'chat gpt-4o-mini'") instead.
 
