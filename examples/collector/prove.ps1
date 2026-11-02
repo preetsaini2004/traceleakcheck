@@ -13,7 +13,9 @@ $col = Start-Process -FilePath $Otelcol -ArgumentList "--config", "`"$config`"" 
     -RedirectStandardError (Join-Path $PSScriptRoot "otelcol.log")
 try {
     Start-Sleep -Seconds 3
-    uv run traceleakcheck run --port $Port --app-endpoint http://127.0.0.1:4318 --settle 3 -v -- node examples/node_agent/app.js
+    # --proof leaks the key through span attributes, a ?key= URL, error events, status, a log record and
+    # a metric: every channel the config claims to cover. Expect all three signals to arrive.
+    uv run traceleakcheck run --port $Port --app-endpoint http://127.0.0.1:4318 --settle 3 --expect traces,logs,metrics -v -- node examples/node_agent/app.js --proof
     $code = $LASTEXITCODE
 } finally {
     Stop-Process -Id $col.Id -Force

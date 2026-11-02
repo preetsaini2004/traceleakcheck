@@ -9,12 +9,13 @@
 - `--port` and `--app-endpoint` let the app send through an OpenTelemetry Collector that forwards to traceleakcheck.
 - Inherited per-signal endpoints and `OTEL_SDK_DISABLED` are removed from the app's environment, so its telemetry can't silently go elsewhere.
 - The GitHub Action has a `command:` input.
+- `pip install traceleakcheck[grpc]` adds gRPC support for apps whose exporters use OTLP over gRPC.
 
 ### Fix for any language
 - `examples/collector/redact.yaml`: a Collector `transform` config that removes well-known key formats and credential query parameters from span names, attributes, error events, status messages, logs and metrics.
 
 ### Examples
-- `examples/node_agent`: a Node app (official OTel SDK) whose error message leaks its key. CI proves the Action catches it.
+- `examples/node_agent`: a Node app (official OTel SDK) whose error message leaks its key. CI proves the Action catches it. `node app.js --proof` also leaks it through a span attribute, a `?key=` URL, a log record and a metric. `examples/collector/prove.ps1` uses it to test the Collector config.
 
 ## 0.1.0 (2026-11-02)
 

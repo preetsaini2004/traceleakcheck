@@ -1232,6 +1232,11 @@ dependencies = [
     { name = "pytest" },
 ]
 
+[package.optional-dependencies]
+grpc = [
+    { name = "grpcio" },
+]
+
 [package.dev-dependencies]
 dev = [
     { name = "opentelemetry-exporter-otlp-proto-grpc" },
@@ -1252,11 +1257,13 @@ survey = [
 
 [package.metadata]
 requires-dist = [
+    { name = "grpcio", marker = "extra == 'grpc'", specifier = ">=1.60" },
     { name = "opentelemetry-api", specifier = ">=1.27" },
     { name = "opentelemetry-proto", specifier = ">=1.27" },
     { name = "protobuf", specifier = ">=5.26" },
     { name = "pytest", specifier = ">=8" },
 ]
+provides-extras = ["grpc"]
 
 [package.metadata.requires-dev]
 dev = [

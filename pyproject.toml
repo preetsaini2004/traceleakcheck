@@ -27,6 +27,10 @@ dependencies = [
     "pytest>=8",
 ]
 
+[project.optional-dependencies]
+# For apps whose exporters use OTLP over gRPC (common in Go and .NET); HTTP needs nothing extra.
+grpc = ["grpcio>=1.60"]
+
 [project.urls]
 Homepage = "https://github.com/preetsaini2004/traceleakcheck"
 Changelog = "https://github.com/preetsaini2004/traceleakcheck/blob/main/CHANGELOG.md"

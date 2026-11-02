@@ -232,7 +232,7 @@ class OTLPReceiver:
             return
         if self._grpc_port is None:
             self._record_error("an exporter sent OTLP over gRPC, but grpcio isn't installed here "
-                               "(pip install grpcio), so that data couldn't be checked")
+                               "(pip install traceleakcheck[grpc]), so that data couldn't be checked")
             conn.close()
             return
         upstream = socket.create_connection(("127.0.0.1", self._grpc_port))
