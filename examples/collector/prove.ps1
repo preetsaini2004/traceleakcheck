@@ -15,7 +15,7 @@ try {
     Start-Sleep -Seconds 3
     # --proof leaks the key through span attributes, a ?key= URL, error events, status, a log record and
     # a metric: every channel the config claims to cover. Expect all three signals to arrive.
-    uv run traceleakcheck run --port $Port --app-endpoint http://127.0.0.1:4318 --settle 3 --expect traces,logs,metrics -v -- node examples/node_agent/app.js --proof
+    uv run traceleakcheck run --port $Port --app-endpoint http://127.0.0.1:4318 --settle 3 --expect traces,logs,metrics --secret OPENAI_API_KEY --secret DB_PASSWORD=password -v -- node examples/node_agent/app.js --proof
     $code = $LASTEXITCODE
 } finally {
     Stop-Process -Id $col.Id -Force

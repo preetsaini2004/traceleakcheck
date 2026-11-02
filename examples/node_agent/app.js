@@ -19,7 +19,9 @@ async function callLlm(prompt) {
 
 function leakEverywhere(span, key) {
   span.setAttribute("llm.prompt", `use this key: ${key}`);
-  span.setAttribute("http.url", `https://gateway.example/v1/chat?key=${key}&model=gpt`);
+  // DB_PASSWORD has no recognisable shape: only a query-parameter rule can catch it here.
+  const pw = process.env.DB_PASSWORD || "";
+  span.setAttribute("http.url", `https://gateway.example/v1/chat?key=${key}&token=${pw}&model=gpt`);
   logs.getLogger("node-agent").emit({
     body: `calling gateway with ${key}`,
     attributes: { "request.auth": `Bearer ${key}` },
