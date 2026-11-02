@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="330" viewBox="0 0 1200 330" role="img" aria-label="How it works: a canary fake key goes into your unchanged app, the app exports OTLP over HTTP or gRPC to a local receiver, every field is scanned, and the result is leak, clean or incomplete">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10z" fill="#5b6878"/>
+    </marker>
+  </defs>
+  <rect width="1200" height="330" rx="16" fill="#0d131b"/>
+  <g font-family="Segoe UI, Helvetica, Arial, sans-serif" text-anchor="middle">
+    <!-- 1 canary -->
+    <rect x="30" y="115" width="180" height="100" rx="12" fill="#352a12" stroke="#f0be5a" stroke-opacity="0.5"/>
+    <text x="120" y="155" font-size="19" font-weight="700" fill="#f0be5a">1. Canary</text>
+    <text x="120" y="182" font-size="14" fill="#c9d1db">a fake key, e.g.</text>
+    <text x="120" y="202" font-size="14" font-family="Consolas, Menlo, monospace" fill="#ffb000">sk-proj-cnry…</text>
+    <!-- 2 app -->
+    <rect x="260" y="115" width="180" height="100" rx="12" fill="#151d27" stroke="#2a3542"/>
+    <text x="350" y="155" font-size="19" font-weight="700" fill="#f2f4f7">2. Your app</text>
+    <text x="350" y="182" font-size="14" fill="#c9d1db">runs as usual,</text>
+    <text x="350" y="202" font-size="14" fill="#c9d1db">no code changes</text>
+    <!-- 3 receiver -->
+    <rect x="510" y="115" width="180" height="100" rx="12" fill="#151d27" stroke="#2a3542"/>
+    <text x="600" y="155" font-size="19" font-weight="700" fill="#f2f4f7">3. Receiver</text>
+    <text x="600" y="182" font-size="14" fill="#c9d1db">catches everything</text>
+    <text x="600" y="202" font-size="14" fill="#c9d1db">the app exports</text>
+    <!-- 4 scan -->
+    <rect x="740" y="115" width="180" height="100" rx="12" fill="#151d27" stroke="#2a3542"/>
+    <text x="830" y="155" font-size="19" font-weight="700" fill="#f2f4f7">4. Scan</text>
+    <text x="830" y="182" font-size="14" fill="#c9d1db">every field: raw, base64,</text>
+    <text x="830" y="202" font-size="14" fill="#c9d1db">URL, hex, truncated</text>
+    <!-- arrows -->
+    <path d="M212 165H256" stroke="#5b6878" stroke-width="2.5" marker-end="url(#arr)"/>
+    <path d="M442 165H506" stroke="#5b6878" stroke-width="2.5" marker-end="url(#arr)"/>
+    <text x="474" y="150" font-size="12" fill="#7d8a99">OTLP</text>
+    <text x="474" y="190" font-size="12" fill="#7d8a99">HTTP/gRPC</text>
+    <path d="M692 165H736" stroke="#5b6878" stroke-width="2.5" marker-end="url(#arr)"/>
+    <path d="M922 165C950 165 950 70 980 70" fill="none" stroke="#5b6878" stroke-width="2.5" marker-end="url(#arr)"/>
+    <path d="M922 165H976" stroke="#5b6878" stroke-width="2.5" marker-end="url(#arr)"/>
+    <path d="M922 165C950 165 950 260 980 260" fill="none" stroke="#5b6878" stroke-width="2.5" marker-end="url(#arr)"/>
+    <!-- verdicts -->
+    <rect x="984" y="40" width="190" height="60" rx="10" fill="#3a1d18"/>
+    <text x="1079" y="68" font-size="17" font-weight="700" fill="#ff7a66">LEAK</text>
+    <text x="1079" y="88" font-size="12.5" fill="#e3b4ac">which step, which field, fix</text>
+    <rect x="984" y="135" width="190" height="60" rx="10" fill="#16301f"/>
+    <text x="1079" y="163" font-size="17" font-weight="700" fill="#6fd18f">CLEAN</text>
+    <text x="1079" y="183" font-size="12.5" fill="#a9d9b8">and telemetry proven to arrive</text>
+    <rect x="984" y="230" width="190" height="60" rx="10" fill="#352a12"/>
+    <text x="1079" y="258" font-size="17" font-weight="700" fill="#f0be5a">INCOMPLETE</text>
+    <text x="1079" y="278" font-size="12.5" fill="#e0cf9e">data missing: never "clean"</text>
+  </g>
+</svg>

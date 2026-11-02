@@ -60,15 +60,7 @@ If your app configures OpenTelemetry from the standard `OTEL_EXPORTER_OTLP_*` se
 
 ## How it works
 
-```mermaid
-flowchart LR
-    A["canary fixture<br/>fake sk-proj-… key"] --> B["your app<br/>(unchanged)"]
-    B -- "OTLP over HTTP or gRPC" --> C["local receiver<br/>one port"]
-    C --> D{"scan every field<br/>raw · base64 · url · hex · truncated"}
-    D -- found --> E["🚨 leak<br/>which step, which field, how to fix"]
-    D -- "not found + control arrived" --> F["✅ clean"]
-    D -- "control missing" --> G["⚠️ incomplete"]
-```
+<p align="center"><img src="docs/readme/how-it-works.svg" alt="How it works: a canary fake key goes into your unchanged app, the app exports OTLP over HTTP or gRPC to a local receiver, every field is scanned, and the result is leak, clean or incomplete" width="100%"></p>
 
 1. **Before your `conftest.py` loads**, `--traceleak` starts a receiver and points the app's exporters at it.
 2. **Each test** that asks for a `canary` gets unique fake secrets in realistic formats: OpenAI, Anthropic, AWS, GitHub, JWT or password.
