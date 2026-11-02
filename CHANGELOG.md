@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.1 (2026-11-02)
 
 ### Safety filter (`scrub()`)
 - Removes every query parameter the OpenTelemetry semantic conventions say to redact. Before, `X-Amz-Signature`, `X-Amz-Security-Token` and `X-Goog-Signature` in S3/GCS presigned URLs were exported unchanged: the same gap as [opentelemetry-python-contrib#5279](https://github.com/open-telemetry/opentelemetry-python-contrib/issues/5279).

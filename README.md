@@ -135,7 +135,7 @@ TLC_PORT=4400 otelcol-contrib --config examples/collector/redact.yaml &
 traceleakcheck run --port 4400 --app-endpoint http://127.0.0.1:4318 -- node app.js
 ```
 
-On Windows, [examples/collector/prove.ps1](https://github.com/preetsaini2004/traceleakcheck/blob/main/examples/collector/prove.ps1) does both steps against the Node demo's `--proof` mode. That mode leaks the key through every channel above, and also sends a password with no known shape in a `?token=` URL through each of them, so only the query-parameter rule can catch it. Without the Collector it leaks; with it, the result is ✅ **clean**. CI runs this proof on every push with otelcol-contrib 0.164.0.
+On Windows, [examples/collector/prove.ps1](https://github.com/preetsaini2004/traceleakcheck/blob/main/examples/collector/prove.ps1) does both steps against the Node demo's `--proof` mode. That mode leaks the key through every channel above, and also sends a password with no known shape in a `?token=` URL through each of them, so only the query-parameter rule can catch it. Without the Collector it leaks in **15** places; with it, the result is ✅ **clean**. CI runs this proof on every push with otelcol-contrib 0.164.0.
 
 ## Tested on real code
 

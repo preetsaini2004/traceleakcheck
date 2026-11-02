@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "traceleakcheck"
-version = "0.2.0"
+version = "0.2.1"
 description = "Prove your AI app's OpenTelemetry export doesn't leak secrets: canary secrets + a local OTLP receiver, in pytest."
 readme = "README.md"
 requires-python = ">=3.10"
