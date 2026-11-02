@@ -171,3 +171,13 @@ def test_html_report_written(pytester):
     r.stdout.fnmatch_lines(["*HTML report:*out.html*"])
     html = (pytester.path / "out.html").read_text(encoding="utf-8")
     assert "Your AWS access key leaked" in html and "How to fix" in html
+
+
+def test_vendor_endpoint_env_points_at_receiver(pytester):
+    pytester.makepyfile(test_env="""
+import os
+def test_it(traceleak):
+    assert os.environ["TRACELOOP_BASE_URL"] == traceleak.endpoint
+    assert os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] == traceleak.endpoint
+""")
+    pytester.runpytest_subprocess("--traceleak").assert_outcomes(passed=1)

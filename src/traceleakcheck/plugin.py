@@ -51,6 +51,9 @@ class TraceLeak:
             "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT": self.endpoint + "/v1/metrics",
             # A ratio sampler could drop the leaking span (false "clean") or the marker (flaky "incomplete").
             "OTEL_TRACES_SAMPLER": "always_on",
+            # Traceloop/OpenLLMetry ignores OTEL_EXPORTER_OTLP_* and reads its own variable (it appends
+            # /v1/<signal>). Unset, it sets up nothing or, with an API key, exports to api.traceloop.com.
+            "TRACELOOP_BASE_URL": self.endpoint,
         }
         for k, v in env.items():
             self._saved_env[k] = os.environ.get(k)
