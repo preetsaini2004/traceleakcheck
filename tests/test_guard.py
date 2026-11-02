@@ -141,6 +141,10 @@ def test_plain_env_values_not_scrubbed(monkeypatch):
     ("DB_PASSWORD", "/Xy9!secretpw"),                 # starts like a path, but isn't one
     ("ADMIN_PASSWORD", "~kQp2Lm9vRt"),
     ("SERVICE_API_KEY", ".Zx81kQp2Lm9v"),
+    ("API_KEY", "12345678901234"),                   # long all-digit key
+    ("ACCESS_TOKEN", "QWERTYUIOPASDFGHJKLZ"),        # long all-capitals key
+    ("API_KEY", "qwertyuiopasdfghjklz"),             # long all-lowercase key
+    ("AUTH_TOKEN", "Abcdefghijklmnop"),              # looks like one long word
 ])
 def test_secret_env_values_still_scrubbed(monkeypatch, name, value):
     monkeypatch.setenv(name, value)

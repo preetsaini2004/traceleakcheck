@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.2 (2026-11-02)
+
+- `scrub()`: long API keys made of a single kind of character (all digits, all capitals or all lowercase, e.g. `API_KEY=12345678901234`) are scrubbed again. 0.2.1 mistook them for plain words and left them in telemetry. A value now counts as a plain word only if each word is 12 characters or fewer.
+- CI checks the downloaded otelcol-contrib against its published SHA-256 before running it.
+
 ## 0.2.1 (2026-11-02)
 
 ### Safety filter (`scrub()`)

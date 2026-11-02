@@ -90,8 +90,12 @@ jobs:
       - run: uv sync
       - name: Install otelcol-contrib
         run: |
-          curl -sSfL "https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v${OTELCOL_VERSION}/otelcol-contrib_${OTELCOL_VERSION}_linux_amd64.tar.gz" \
-            | tar -xz otelcol-contrib
+          f="otelcol-contrib_${OTELCOL_VERSION}_linux_amd64.tar.gz"
+          base="https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v${OTELCOL_VERSION}"
+          curl -sSfL -O "$base/$f" -O "$base/$f.sha256"
+          # The .sha256 file holds only the hash; build the "hash  file" line sha256sum -c expects.
+          echo "$(cut -d' ' -f1 "$f.sha256")  $f" | sha256sum -c -
+          tar -xzf "$f" otelcol-contrib
       - run: ./otelcol-contrib validate --config examples/collector/redact.yaml
       - name: Without the Collector, --proof must leak
         run: |
