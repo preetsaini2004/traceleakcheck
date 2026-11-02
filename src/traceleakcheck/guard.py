@@ -63,7 +63,9 @@ _UNAMBIGUOUS_ENV_NAME = re.compile(r"(?i)secret|passw(?:or)?d")  # e.g. not KEYB
 _MIN_SECRET_LEN = 8
 
 # Plain words, slugs and numbers: "production", "us-east-1", "PROD_EU", "My-Service", "30000000".
-_WORD = r"(?:[A-Za-z][a-z]*|[A-Z]+|[0-9]+)"
+# Words are capped at 12 characters: real keys can be all digits or one letter case
+# ("12345678901234", "QWERTYUIOPASDFGHJKLZ"), and those must still be scrubbed.
+_WORD = r"(?:[A-Za-z][a-z]{0,11}|[A-Z]{1,12}|[0-9]{1,12})"
 _PLAIN_VALUE = re.compile(rf"{_WORD}(?:[-_.]{_WORD})*")
 # A path needs at least one folder (/run/secrets/db, ~/.ssh/key, ./certs/x, C:\keys\a, \\host\share),
 # so a password that merely starts with "/", "~" or "." is still treated as a secret.
