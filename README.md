@@ -111,7 +111,6 @@ One secret becomes many copies, because every layer of an agent (chat step, agen
 
 **[Read the survey as a page](https://preetsaini2004.github.io/traceleakcheck/)**, with the full results matrix.
 
-
 [survey/FINDINGS.md](https://github.com/preetsaini2004/traceleakcheck/blob/main/survey/FINDINGS.md) runs the OpenAI SDK under OTel openai-v2, OpenLLMetry, OpenInference, Logfire and httpx instrumentation, across 8 leak scenarios:
 
 - **No content opt-out we tested stops a secret in an error message.** That includes `TRACELOOP_TRACE_CONTENT=false`, `OPENINFERENCE_HIDE_*` and `NO_CONTENT`.
