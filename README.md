@@ -95,6 +95,43 @@ It covers span names, attributes, exception events, status messages, log bodies 
 
 A filter can't recognize a secret that matches none of these rules, such as an unusual password a user types. That's why the two go together: **the filter is the fix, and `pytest --traceleak` is the proof.**
 
+## Any language: `traceleakcheck run`
+
+The checker speaks OTLP, the format every OpenTelemetry SDK exports, so it can check an app in any language from the outside. Node, Go, Java, .NET and Python all work. No pytest is needed:
+
+```sh
+traceleakcheck run --secret OPENAI_API_KEY -- node app.js
+```
+
+It runs these steps:
+1. Starts the receiver.
+2. Sets the app's `OPENAI_API_KEY` to a fresh fake key.
+3. Points the app's OpenTelemetry SDK at the receiver with the standard `OTEL_*` settings.
+4. Runs the app until it exits.
+5. Prints the same plain-English report. The exit code is `1` on a leak and `2` if it couldn't check, so CI fails.
+
+**Servers.** Pass a command that exercises the app. `{OPENAI_API_KEY}` in it is replaced with the fake key, and that works in every shell:
+
+```sh
+traceleakcheck run --ready-url http://localhost:3000/health \
+  --drive "curl -s localhost:3000/chat?q={OPENAI_API_KEY}" -- npm start
+```
+
+| Option | What it does |
+|---|---|
+| `--secret ENV[=KIND]` | Env var to fill with a fake secret: `openai` (default), `anthropic`, `aws`, `github`, `jwt` or `password`. Repeatable. |
+| `--drive CMD`, `--ready-url URL` | Treat the app as a server: wait until it answers, run `CMD`, then stop it, including child processes. |
+| `--expect traces,logs` | Signals that must arrive, or the result is "couldn't check" (default: `traces`). |
+| `--html`, `--report`, `-v` | HTML report, JSON report, exact field paths. |
+
+**The control is weaker than in pytest.** traceleakcheck can't send a marker from inside another process. It checks that telemetry arrived on every expected signal and prints how many spans, logs and metrics it scanned. An app that exits without flushing loses its last batch, so make sure it shuts the SDK down (Node: `await sdk.shutdown()`). See [examples/node_agent](https://github.com/preetsaini2004/traceleakcheck/tree/main/examples/node_agent) for a leaking Node app, and the Action's `command:` input for CI.
+
+**The fix for any language** is an OpenTelemetry Collector between your app and your backend. [examples/collector/redact.yaml](https://github.com/preetsaini2004/traceleakcheck/blob/main/examples/collector/redact.yaml) removes well-known key formats and credential query parameters from span names, attributes, error events, status messages, logs and metrics. Prove it covers your app by sending the app through the Collector and the Collector to traceleakcheck:
+
+```sh
+traceleakcheck run --port 4400 --app-endpoint http://127.0.0.1:4318 -- node app.js
+```
+
 ## Tested on real code
 
 We pointed TraceLeakCheck at the [OpenTelemetry Demo](https://github.com/open-telemetry/opentelemetry-demo)'s AI shop assistant (LangGraph + Traceloop), unmodified, talking to a fake LLM:
@@ -121,7 +158,7 @@ One secret becomes many copies, because every layer of an agent (chat step, agen
 
 ## Limits
 
-- **Python and pytest only** for now.
+- **Any language via `traceleakcheck run`**, but with a weaker control than the pytest plugin, and no detection of spans left open. `scrub()` is Python-only; other languages use the Collector config.
 - **Sampling is forced on** with `OTEL_TRACES_SAMPLER=always_on`. An app that passes an explicit sampler in code can still drop the span that leaks.
 - **Telemetry that isn't OTLP**, such as metrics read by a Prometheus reader, can't be checked. Skip it with `--traceleak-ignore=metrics`.
 

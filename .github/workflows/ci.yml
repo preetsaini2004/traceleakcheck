@@ -44,3 +44,27 @@ jobs:
         run: |
           test "${{ steps.demo.outcome }}" = failure
           python -c "import json,sys; s=json.load(open('traceleak-report.json'))['summary']; sys.exit(0 if s['leak']==1 else 1)"
+
+  node:
+    # Any-language mode: the Node demo leaks on purpose, so the Action must fail the build.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - run: npm ci
+        working-directory: examples/node_agent
+      - id: demo
+        uses: ./
+        continue-on-error: true
+        with:
+          command: --secret OPENAI_API_KEY -- node examples/node_agent/app.js
+      - name: Action must have caught the Node demo leak
+        shell: bash
+        run: |
+          test "${{ steps.demo.outcome }}" = failure
+          python -c "import json,sys; s=json.load(open('traceleak-report.json'))['summary']; sys.exit(0 if s['leak']==1 else 1)"

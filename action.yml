@@ -11,6 +11,11 @@ inputs:
   report:
     description: Where to write the JSON report.
     default: traceleak-report.json
+  command:
+    description: >-
+      Check an app in any language instead of running pytest. Arguments for `traceleakcheck run`,
+      e.g. `--secret OPENAI_API_KEY -- node app.js`.
+    default: ""
 
 outputs:
   report:
@@ -27,7 +32,13 @@ runs:
         ACTION_PATH: ${{ github.action_path }}
         REPORT: ${{ inputs.report }}
         ARGS: ${{ inputs.args }}
+        COMMAND: ${{ inputs.command }}
       run: |
         python -m pip install --quiet "$ACTION_PATH"
-        # $ARGS is deliberately unquoted so it splits into separate pytest arguments.
-        python -m pytest --traceleak --traceleak-report="$REPORT" $ARGS
+        if [ -n "$COMMAND" ]; then
+          # shlex keeps quoted arguments (e.g. --drive "curl ...") together, with no shell eval.
+          python -c 'import os, shlex, sys; from traceleakcheck.cli import main; sys.exit(main(["run", "--report", os.environ["REPORT"], *shlex.split(os.environ["COMMAND"])]))'
+        else
+          # $ARGS is deliberately unquoted so it splits into separate pytest arguments.
+          python -m pytest --traceleak --traceleak-report="$REPORT" $ARGS
+        fi

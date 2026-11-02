@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased (0.2.0)
+
+### Any language
+- `traceleakcheck run -- <command>` checks an app in any language from the outside. It plants fake secrets in env vars (`--secret`), points the app's SDK at the receiver with the standard `OTEL_*` settings, runs the app, and scans what arrived. Exit codes: 0 clean, 1 leak, 2 couldn't check.
+- Server mode: `--drive` runs a command against the app (with `{ENV}` replaced by the fake secret) once `--ready-url` answers. Then it stops the whole process tree, gracefully first.
+- The control for outside apps requires spans, logs or metrics (`--expect`) to have arrived, counted per item rather than per payload. A clean result prints what was scanned.
+- `--port` and `--app-endpoint` let the app send through an OpenTelemetry Collector that forwards to traceleakcheck.
+- Inherited per-signal endpoints and `OTEL_SDK_DISABLED` are removed from the app's environment, so its telemetry can't silently go elsewhere.
+- The GitHub Action has a `command:` input.
+
+### Fix for any language
+- `examples/collector/redact.yaml`: a Collector `transform` config that removes well-known key formats and credential query parameters from span names, attributes, error events, status messages, logs and metrics.
+
+### Examples
+- `examples/node_agent`: a Node app (official OTel SDK) whose error message leaks its key. CI proves the Action catches it.
+
 ## 0.1.0 (2026-11-02)
 
 First release.

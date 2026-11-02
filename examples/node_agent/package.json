@@ -1,0 +1,10 @@
+{
+  "name": "traceleakcheck-node-demo",
+  "private": true,
+  "description": "A Node app whose error message leaks its API key into OpenTelemetry. Check it with: traceleakcheck run -- node app.js",
+  "scripts": { "start": "node app.js" },
+  "dependencies": {
+    "@opentelemetry/api": "^1.10.0",
+    "@opentelemetry/sdk-node": "^0.300.0"
+  }
+}

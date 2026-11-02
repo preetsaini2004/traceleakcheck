@@ -86,6 +86,18 @@ INCOMPLETE_TIP = Tip(
     "app sets up OpenTelemetry from the standard OTEL_EXPORTER_OTLP_* settings, or register it with "
     "traceleak.watch(provider). Skip signals you don't send over OTLP with --traceleak-ignore.",
 )
+# `traceleakcheck run` checks apps in any language, so its tips can't point at Python-only fixes.
+RUN_INCOMPLETE_TIP = Tip(
+    "We couldn't check",
+    "Your app's monitoring data never reached TraceLeakCheck, so it can't promise anything is clean. "
+    "Make sure the app sets up OpenTelemetry with an OTLP exporter that reads OTEL_EXPORTER_OTLP_ENDPOINT, "
+    "and that it shuts the SDK down before exiting so the last batch is sent.",
+)
+RUN_SAFETY_NET = Tip(
+    "Add a safety net that works for any language",
+    "Send your telemetry through an OpenTelemetry Collector that removes secrets before they reach your "
+    "dashboard (see examples/collector/redact.yaml). Then re-run traceleakcheck run to prove it worked.",
+)
 ERROR_TIP = Tip(
     "Some monitoring data couldn't be read",
     "Part of what your app exported was unreadable, so a leak could be hiding in it. Check that your "
@@ -157,10 +169,12 @@ def _place(f: dict) -> Place:
 
 def explain(result: dict) -> Explanation:
     status = result["status"]
+    cli = result.get("runner") == "cli"
     if status == "clean":
         return Explanation(status, "No leak: your secrets stayed out of the monitoring data.")
     if status == "incomplete":
-        return Explanation(status, "Couldn't check: expected monitoring data never arrived.", tips=[INCOMPLETE_TIP])
+        return Explanation(status, "Couldn't check: expected monitoring data never arrived.",
+                           tips=[RUN_INCOMPLETE_TIP if cli else INCOMPLETE_TIP])
     if status == "error":
         return Explanation(status, "Couldn't fully check: some monitoring data was unreadable.", tips=[ERROR_TIP])
 
@@ -186,7 +200,7 @@ def explain(result: dict) -> Explanation:
         else:
             groups[sig] = Group([step], places, [p.path for p in places])
     exp.groups = list(groups.values())
-    exp.tips = [TIPS[k] for k in tip_keys] + [SAFETY_NET]
+    exp.tips = [TIPS[k] for k in tip_keys] + [RUN_SAFETY_NET if cli else SAFETY_NET]
     return exp
 
 

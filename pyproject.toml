@@ -32,6 +32,9 @@ Homepage = "https://github.com/preetsaini2004/traceleakcheck"
 Changelog = "https://github.com/preetsaini2004/traceleakcheck/blob/main/CHANGELOG.md"
 Issues = "https://github.com/preetsaini2004/traceleakcheck/issues"
 
+[project.scripts]
+traceleakcheck = "traceleakcheck.cli:main"
+
 [project.entry-points.pytest11]
 traceleakcheck = "traceleakcheck.plugin"
 
