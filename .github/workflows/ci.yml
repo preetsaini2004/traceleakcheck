@@ -12,8 +12,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest]
         python: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+        # Windows minutes count double on private repos: cover only the oldest and newest Python.
+        include:
+          - {os: windows-latest, python: "3.10"}
+          - {os: windows-latest, python: "3.14"}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
