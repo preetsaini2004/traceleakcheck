@@ -39,7 +39,7 @@ None of them stopped a secret inside an **error message**. Every instrumentation
 
 `opentelemetry-util-http` 0.66b2 redacts only `AWSAccessKeyId`, `Signature`, `sig` and `X-Goog-Signature` (`PARAMS_TO_REDACT`). That is a subset of the 7 keys the [semantic conventions](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/registry/attributes/url.md) say SHOULD be redacted; the three `X-Amz-*` keys are missing. Neither list includes `key`.
 
-The missing `X-Amz-*` keys mean an S3/SigV4 presigned URL is exported with its signature, credential scope and STS session token. We verified this with `opentelemetry-instrumentation-httpx` 0.66b2 on 2026-11-02; no existing upstream issue covers it (closest: [#2992](https://github.com/open-telemetry/opentelemetry-python-contrib/issues/2992)).
+The missing `X-Amz-*` keys mean an S3/SigV4 presigned URL is exported with its signature, credential scope and STS session token. We verified this with `opentelemetry-instrumentation-httpx` 0.66b2 on 2026-11-02; reported upstream as [opentelemetry-python-contrib#5279](https://github.com/open-telemetry/opentelemetry-python-contrib/issues/5279).
 
 APIs that take their key as `?key=` get it written into `http.url` / `url.full`. Examples are gateways and several Google REST APIs. The GenAI instrumentations didn't record URLs at all in our runs.
 
