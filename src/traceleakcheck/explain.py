@@ -93,10 +93,25 @@ class Place:
 
 
 @dataclass
+class Group:
+    """Steps that leaked in exactly the same places, shown once instead of once per step."""
+
+    steps: list[str]
+    places: list[Place]  # as seen in the first step
+    paths: list[str]  # every technical path across all the steps, for -v and HTML details
+
+    def where(self) -> str:
+        if len(self.steps) == 1:
+            s = self.steps[0]
+            return f"In {s}" if s.startswith(("a ", "exported")) else f'In step "{s}"'
+        return f"In {len(self.steps)} steps: " + ", ".join(f'"{s}"' for s in self.steps)
+
+
+@dataclass
 class Explanation:
     status: str
     headline: str
-    steps: dict[str, list[Place]] = field(default_factory=dict)  # step name -> places
+    groups: list[Group] = field(default_factory=list)
     tips: list[Tip] = field(default_factory=list)
 
 
@@ -146,12 +161,22 @@ def explain(result: dict) -> Explanation:
     headline = f"Your {' and '.join(kinds)} leaked into your app's monitoring data ({n} place{'s' * (n != 1)})."
     exp = Explanation(status, headline)
     tip_keys = []
+    by_step: dict[str, list[Place]] = {}
     for f in findings:
         p = _place(f)
         step = f["span"] or {"logs": "a log record", "metrics": "a metric"}.get(f["signal"], "exported data")
-        exp.steps.setdefault(step, []).append(p)
+        by_step.setdefault(step, []).append(p)
         if p.tip not in tip_keys:
             tip_keys.append(p.tip)
+    groups: dict[tuple, Group] = {}
+    for step, places in by_step.items():
+        sig = tuple((p.what, p.how) for p in places)
+        if sig in groups:
+            groups[sig].steps.append(step)
+            groups[sig].paths += [p.path for p in places]
+        else:
+            groups[sig] = Group([step], places, [p.path for p in places])
+    exp.groups = list(groups.values())
     exp.tips = [TIPS[k] for k in tip_keys]
     return exp
 
@@ -162,12 +187,12 @@ def terminal_lines(result: dict, verbose: bool = False) -> list[str]:
     label = {"leak": "LEAK FOUND", "incomplete": "COULDN'T CHECK", "error": "COULDN'T FULLY CHECK"}.get(
         exp.status, "CLEAN")
     out = [f"{label}: {exp.headline}"]
-    for step, places in exp.steps.items():
-        out.append(f'  In step "{step}":' if not step.startswith(("a ", "exported")) else f"  In {step}:")
-        for p in places:
+    for g in exp.groups:
+        out.append(f"  {g.where()}:")
+        for p in g.places:
             out.append(f"    - {p.what} ({p.how})")
-            if verbose:
-                out.append(f"        {p.path}")
+        if verbose:
+            out += [f"        {path}" for path in g.paths]
     if exp.status in ("incomplete", "error") and result.get("detail"):
         out.append(f"  Details: {result['detail']}")
     for t in exp.tips:

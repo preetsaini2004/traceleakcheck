@@ -18,14 +18,14 @@ def test_places_named_in_plain_english():
     }
     for path, (what, tip) in cases.items():
         e = explain(_leak(path))
-        (place,) = e.steps["llm.call"]
+        (place,) = e.groups[0].places
         assert place.what.startswith(what), (path, place.what)
         assert tip in e.tips[0].text, (path, e.tips[0].text)
 
 
 def test_variant_and_kind_wording():
     e = explain(_leak("x.attributes[p].stringValue", variant="base64[1]", kind="aws"))
-    assert "AWS access key" in e.headline and e.steps["llm.call"][0].how == "base64-encoded"
+    assert "AWS access key" in e.headline and e.groups[0].places[0].how == "base64-encoded"
 
 
 def test_terminal_lines_ascii_and_verbose_paths():
@@ -42,3 +42,19 @@ def test_html_escapes_and_orders_leaks_first():
     html = render({"summary": {"clean": 1, "leak": 1, "incomplete": 0, "error": 0}, "results": [clean, leak]})
     assert "<script>" not in html and "&lt;script&gt;" in html
     assert html.index("test_x") < html.index("test_ok")
+
+
+def test_identical_leaks_in_many_steps_shown_once():
+    def f(span, attr):
+        return {"canary_kind": "openai", "variant": "raw", "signal": "traces", "span": span,
+                "path": f"s.events[0].attributes[{attr}].stringValue"}
+    steps = ["ChatLLM.chat", "execute_task model", "LangGraph.workflow"]
+    findings = [f(s, a) for s in steps for a in ("exception.message", "exception.stacktrace")]
+    findings.append(f("other step", "exception.message"))  # different leak set: stays separate
+    e = explain({"nodeid": "t", "status": "leak", "findings": findings, "detail": ""})
+    assert [g.steps for g in e.groups] == [steps, ["other step"]]
+    lines = terminal_lines({"nodeid": "t", "status": "leak", "findings": findings, "detail": ""})
+    assert '  In 3 steps: "ChatLLM.chat", "execute_task model", "LangGraph.workflow":' in lines
+    assert sum("the error message" in line for line in lines) == 2  # once per group, not once per step
+    assert len(terminal_lines({"nodeid": "t", "status": "leak", "findings": findings, "detail": ""},
+                              verbose=True)) == len(lines) + 7  # every path still listed with -v

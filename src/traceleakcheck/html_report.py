@@ -49,9 +49,12 @@ def _card(r: dict) -> str:
     s = exp.status
     parts = [f'<section class="card {s}"><h2>{escape(r["nodeid"])}</h2>',
              f'<p class="headline">{_ICON[s]} {escape(exp.headline)}</p>']
-    for step, places in exp.steps.items():
-        where = f"In step <b>{escape(step)}</b>" if not step.startswith(("a ", "exported")) else f"In {escape(step)}"
-        items = "".join(f'<li>{escape(p.what)} <span class="how">({escape(p.how)})</span></li>' for p in places)
+    for g in exp.groups:
+        if len(g.steps) == 1:
+            where = escape(g.where())
+        else:
+            where = f"In {len(g.steps)} steps: " + ", ".join(f"<b>{escape(s)}</b>" for s in g.steps)
+        items = "".join(f'<li>{escape(p.what)} <span class="how">({escape(p.how)})</span></li>' for p in g.places)
         parts.append(f'<div class="step">{where}:<ul>{items}</ul></div>')
     if s in ("incomplete", "error") and r.get("detail"):
         parts.append(f'<p class="how">{escape(r["detail"])}</p>')
