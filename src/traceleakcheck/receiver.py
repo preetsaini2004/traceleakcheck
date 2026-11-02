@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import gzip
 import json
+import socket
 import threading
 import zlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -74,6 +75,28 @@ def _read_body(handler: BaseHTTPRequestHandler) -> bytes:
     return _read_exact(handler.rfile, length)
 
 
+_GRPC_SERVICES = {
+    "traces": "opentelemetry.proto.collector.trace.v1.TraceService",
+    "logs": "opentelemetry.proto.collector.logs.v1.LogsService",
+    "metrics": "opentelemetry.proto.collector.metrics.v1.MetricsService",
+}
+
+
+def _pipe(src: socket.socket, dst: socket.socket) -> None:
+    """Copy bytes one way until either side closes; then close both."""
+    try:
+        while data := src.recv(65536):
+            dst.sendall(data)
+    except OSError:
+        pass
+    finally:
+        for s in (src, dst):
+            try:
+                s.close()
+            except OSError:
+                pass
+
+
 class _Server(ThreadingHTTPServer):
     # Non-daemon handler threads let server_close() join in-flight requests,
     # so no payload can land after stop() returns.
@@ -111,21 +134,10 @@ class OTLPReceiver:
                 ctype = (self.headers.get("Content-Type") or "").split(";")[0].strip()
                 try:
                     body = _decompress(_read_body(self), self.headers.get("Content-Encoding") or "")
-                    if ctype == "application/json":
-                        data = json.loads(body)
-                        if not isinstance(data, dict) or (data and _JSON_ROOT[signal] not in data):
-                            raise ValueError(f"not an OTLP/JSON {signal} request")
-                    else:
-                        msg = req_cls()
-                        msg.ParseFromString(body)
-                        data = MessageToDict(msg)
-                    # Keep the raw body: the decoder silently drops unknown protobuf fields.
-                    data[RAW_KEY] = body.decode("latin-1")
+                    receiver._ingest(signal, req_cls, body, as_json=ctype == "application/json")
                 except Exception as exc:  # record, don't crash the exporter's thread
                     self._fail(400, repr(exc))
                     return
-                with receiver._lock:
-                    receiver.payloads.append((signal, data))
                 if ctype == "application/json":
                     out, out_type = b"{}", "application/json"
                 else:
@@ -139,12 +151,97 @@ class OTLPReceiver:
             def log_message(self, *args):  # keep test output quiet
                 pass
 
-        self._server = _Server((host, port), Handler)
-        self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+        # One public port for both protocols: HTTP and gRPC exporters read the same
+        # OTEL_EXPORTER_OTLP_ENDPOINT, so they can't be given different ports. Each connection is
+        # routed by its first bytes: HTTP/1 connections go to the HTTP handler, gRPC (HTTP/2,
+        # which always opens with "PRI * HTTP/2.0") is relayed to an internal grpcio server.
+        self._http = _Server((host, 0), Handler, bind_and_activate=False)  # fed sockets directly
+        self._sock = socket.create_server((host, port))
+        self._sock.settimeout(0.2)  # accept loop polls _stopping, so stop() never blocks
+        self._stopping = threading.Event()
+        self._thread = threading.Thread(target=self._accept_loop, daemon=True)
+        self._grpc = self._grpc_port = None
+
+    def _ingest(self, signal: str, req_cls, body: bytes, as_json: bool = False) -> None:
+        if as_json:
+            data = json.loads(body)
+            if not isinstance(data, dict) or (data and _JSON_ROOT[signal] not in data):
+                raise ValueError(f"not an OTLP/JSON {signal} request")
+        else:
+            msg = req_cls()
+            msg.ParseFromString(body)
+            data = MessageToDict(msg)
+        # Keep the raw body: the decoder silently drops unknown protobuf fields.
+        data[RAW_KEY] = body.decode("latin-1")
+        with self._lock:
+            self.payloads.append((signal, data))
+
+    def _record_error(self, why: str) -> None:
+        with self._lock:
+            self.errors.append(why)
+
+    def _start_grpc(self) -> None:
+        try:
+            import grpc
+        except ImportError:
+            return  # gRPC connections are then recorded as errors, never as "clean"
+        from concurrent.futures import ThreadPoolExecutor
+
+        def handler(signal, req_cls):
+            def export(body: bytes, context):
+                try:
+                    self._ingest(signal, req_cls, body)  # grpcio has already decompressed it
+                except Exception as exc:
+                    self._record_error(f"gRPC {signal}: {exc!r}")
+                    context.abort(grpc.StatusCode.INVALID_ARGUMENT, "undecodable OTLP request")
+                return b""  # an empty Export*ServiceResponse
+            # No (de)serializers: we get the exact wire bytes, decoded by the same path as HTTP.
+            return grpc.unary_unary_rpc_method_handler(export)
+
+        services = [grpc.method_handlers_generic_handler(_GRPC_SERVICES[signal], {"Export": handler(signal, req)})
+                    for signal, req, _ in _ROUTES.values()]
+        self._grpc = grpc.server(ThreadPoolExecutor(max_workers=4), handlers=services)
+        self._grpc_port = self._grpc.add_insecure_port("127.0.0.1:0")
+        self._grpc.start()
+
+    def _accept_loop(self) -> None:
+        while not self._stopping.is_set():
+            try:
+                conn, addr = self._sock.accept()
+            except TimeoutError:
+                continue
+            except OSError:
+                return
+            threading.Thread(target=self._route, args=(conn, addr), daemon=True).start()
+
+    def _route(self, conn: socket.socket, addr) -> None:
+        conn.settimeout(10)
+        try:
+            head = b""
+            while len(head) < 3:
+                head = conn.recv(3, socket.MSG_PEEK)
+                if not head:
+                    conn.close()
+                    return
+        except OSError:
+            conn.close()
+            return
+        conn.settimeout(None)
+        if head != b"PRI":
+            self._http.process_request(conn, addr)
+            return
+        if self._grpc_port is None:
+            self._record_error("an exporter sent OTLP over gRPC, but grpcio isn't installed here "
+                               "(pip install grpcio), so that data couldn't be checked")
+            conn.close()
+            return
+        upstream = socket.create_connection(("127.0.0.1", self._grpc_port))
+        for src, dst in ((conn, upstream), (upstream, conn)):
+            threading.Thread(target=_pipe, args=(src, dst), daemon=True).start()
 
     @property
     def endpoint(self) -> str:
-        host, port = self._server.server_address[:2]
+        host, port = self._sock.getsockname()[:2]
         return f"http://{host}:{port}"
 
     def snapshot(self) -> list[tuple[str, dict]]:
@@ -162,12 +259,17 @@ class OTLPReceiver:
             self.errors.clear()
 
     def start(self) -> "OTLPReceiver":
+        self._start_grpc()
         self._thread.start()
         return self
 
     def stop(self) -> None:
-        self._server.shutdown()
-        self._server.server_close()  # joins in-flight handler threads
+        self._stopping.set()
+        self._thread.join()
+        self._sock.close()
+        self._http.server_close()  # joins in-flight HTTP handler threads
+        if self._grpc is not None:
+            self._grpc.stop(grace=1).wait()
 
     def __enter__(self) -> "OTLPReceiver":
         return self.start()

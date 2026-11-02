@@ -37,7 +37,7 @@ LEAK FOUND: Your OpenAI API key leaked into your app's monitoring data (3 places
 
 pytest lists a leak as `ERROR at teardown`, because the check runs after the test and its fixtures finish.
 
-`--traceleak` starts the receiver and points the standard `OTEL_EXPORTER_OTLP_*` env vars at it before your `conftest.py` loads. Any app that configures OTel from the environment needs no changes. If your app builds a provider by hand, register it with `traceleak.watch(provider)`.
+`--traceleak` starts the receiver and points the standard `OTEL_EXPORTER_OTLP_*` env vars (and Traceloop's `TRACELOOP_BASE_URL`) at it before your `conftest.py` loads. One port accepts OTLP over both HTTP and gRPC, so apps that hard-code the gRPC exporter work too (gRPC needs `grpcio`, which every gRPC exporter already installs). Any app that configures OTel from the environment needs no changes. If your app builds a provider by hand, register it with `traceleak.watch(provider)`.
 
 Every test that uses `canary` is checked after its fixtures tear down, so leaks from clients closing count too. A failed check is reported as an error in the test's teardown. It works with `pytest -n` (xdist). Each test gets one of four verdicts:
 

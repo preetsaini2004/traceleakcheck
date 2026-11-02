@@ -181,3 +181,17 @@ def test_it(traceleak):
     assert os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] == traceleak.endpoint
 """)
     pytester.runpytest_subprocess("--traceleak").assert_outcomes(passed=1)
+
+
+GRPC_HEADER = APP_HEADER.replace("opentelemetry.exporter.otlp.proto.http.trace_exporter",
+                                 "opentelemetry.exporter.otlp.proto.grpc.trace_exporter")
+
+
+def test_app_hardwired_to_grpc_exporter_is_checked(pytester):
+    _make(pytester,
+          "def run(k):\n    with tracer.start_as_current_span('chat') as s:\n        s.set_attribute('prompt', k)\n",
+          "from app import run\ndef test_leak(canary):\n    run(canary().value)\n"
+          "def test_clean(canary):\n    canary()\n    run('safe')\n",
+          header=GRPC_HEADER)
+    r = pytester.runpytest_subprocess("--traceleak", timeout=120)
+    r.stdout.fnmatch_lines(["*Result: 1 clean, 1 leak, 0 incomplete, 0 error*"])
