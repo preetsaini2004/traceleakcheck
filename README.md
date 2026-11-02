@@ -88,10 +88,10 @@ logger_provider.add_log_record_processor(BatchLogRecordProcessor(scrub(OTLPLogEx
 ```
 
 Before anything is exported, the filter removes:
-- **Known secrets:** the values of environment variables named like `*KEY*`, `*TOKEN*`, `*SECRET*` or `*PASSWORD*`, plus anything registered with `add_secret()`. Their base64, URL and hex forms are removed too.
-- **Well-known key formats:** OpenAI, Anthropic, AWS, GitHub, Google, Slack, JWT and Bearer tokens, and credential query parameters such as `?key=`.
+- **Known secrets:** the values of environment variables named like `*KEY*`, `*TOKEN*`, `*SECRET*` or `*PASSWORD*`, plus anything registered with `add_secret()`. Their base64, URL and hex forms are removed too. Values that are plainly not secrets are left alone, so they don't vanish from every trace: file paths, URLs without a password, and, for `*KEY*`, `*TOKEN*`, `*AUTH*` and `*CREDENTIAL*` names, plain words and numbers such as `production` or `us-east-1`. Register anything else with `add_secret()`.
+- **Well-known key formats:** OpenAI, Anthropic, AWS, GitHub, Google, Slack, JWT and Bearer tokens, and credential query parameters such as `?key=`, plus every parameter the OpenTelemetry semantic conventions say to redact (`X-Amz-Signature`, `X-Amz-Credential`, `X-Amz-Security-Token`, `X-Goog-Signature`, `AWSAccessKeyId`, `Signature`, `sig`).
 
-It covers span names, attributes, exception events, status messages, log bodies and log attributes.
+It covers span names, attributes, exception events, status messages, link attributes, resource attributes, log bodies and log attributes. The environment is read once per export batch, so a secret set while the app runs is caught from the next batch on.
 
 A filter can't recognize a secret that matches none of these rules, such as an unusual password a user types. That's why the two go together: **the filter is the fix, and `pytest --traceleak` is the proof.**
 
