@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Do GenAI instrumentations leak your secrets?</title>
+<meta name="description" content="A survey of five OpenTelemetry instrumentations for the OpenAI SDK: which ones export a planted secret, and which privacy settings actually stop it.">
+<meta property="og:title" content="Do GenAI instrumentations leak your secrets?">
+<meta property="og:description" content="We planted fake API keys and captured every OTLP export from five OpenTelemetry instrumentations. No content opt-out we tested stops a secret inside an error message.">
+<meta property="og:image" content="https://preetsaini2004.github.io/traceleakcheck/readme/terminal.png">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230b0f14'/%3E%3Ccircle cx='16' cy='16' r='7' fill='%23ffb000'/%3E%3C/svg%3E">
+<style>
+:root{
+  --bg:#0b0f14;--bg2:#121a24;--panel:#0f161f;--line:#243040;--text:#e8ecf1;--muted:#9aa7b6;--faint:#6b7889;
+  --accent:#ffb000;--red:#ff7a66;--red-bg:#3a1d18;--green:#6fd18f;--green-bg:#122619;--amber:#f0be5a;--amber-bg:#352a12;
+  --code:#16202b;color-scheme:dark;
+}
+@media (prefers-color-scheme: light){:root:not([data-theme="dark"]){
+  --bg:#fbfaf7;--bg2:#f3f1ea;--panel:#ffffff;--line:#e2ded3;--text:#1c1d1f;--muted:#5d6168;--faint:#868a91;
+  --accent:#b07800;--red:#c8341f;--red-bg:#fdecea;--green:#1f7a3f;--green-bg:#e8f5ec;--amber:#9a6400;--amber-bg:#fdf3dc;
+  --code:#f0eee7;color-scheme:light;
+}}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--text);font:17px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+a{color:var(--accent);text-underline-offset:3px}
+code{font:0.88em/1.4 ui-monospace,Consolas,Menlo,monospace;background:var(--code);padding:2px 6px;border-radius:5px;overflow-wrap:anywhere}
+pre{background:var(--code);border:1px solid var(--line);border-radius:10px;padding:14px 16px;overflow-x:auto;font:14px/1.5 ui-monospace,Consolas,Menlo,monospace}
+pre code{background:none;padding:0}
+.wrap{max-width:1080px;margin:0 auto;padding:0 20px}
+.narrow{max-width:760px}
+
+/* hero */
+header.hero{background:linear-gradient(135deg,#0b0f14,#121a24);color:#e8ecf1;border-bottom:1px solid #243040;position:relative;overflow:hidden}
+header.hero::before{content:"";position:absolute;inset:0;background-image:linear-gradient(#ffffff0a 1px,transparent 1px),linear-gradient(90deg,#ffffff0a 1px,transparent 1px);background-size:32px 32px}
+.hero .wrap{position:relative;padding-top:28px;padding-bottom:56px}
+.top{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;font-size:15px}
+.brand{font-weight:700;letter-spacing:-.01em;color:#e8ecf1;text-decoration:none}
+.brand span{color:#ffb000}
+.top nav a{color:#9aa7b6;text-decoration:none;margin-left:18px}
+.top nav a:hover{color:#ffb000}
+.kicker{margin:56px 0 10px;font:600 13px/1 ui-monospace,Consolas,monospace;letter-spacing:.12em;text-transform:uppercase;color:#ffb000}
+h1{font-size:clamp(34px,6vw,58px);line-height:1.05;letter-spacing:-.025em;margin:0 0 18px;max-width:16ch}
+.lede{font-size:clamp(17px,2.2vw,20px);color:#a9b4c2;max-width:60ch;margin:0}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-top:40px}
+.stat{background:#0d131bcc;border:1px solid #243040;border-radius:14px;padding:18px 18px 16px}
+.stat b{display:block;font-size:34px;line-height:1.1;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.stat.r b{color:#ff7a66}.stat.a b{color:#f0be5a}.stat.g b{color:#6fd18f}
+.stat span{color:#9aa7b6;font-size:15px}
+
+section{padding:56px 0 8px}
+h2{font-size:clamp(24px,3.4vw,32px);letter-spacing:-.02em;margin:0 0 12px;line-height:1.2}
+h3{font-size:20px;margin:0 0 8px;line-height:1.3}
+p{margin:0 0 14px}
+.muted{color:var(--muted)}
+
+/* matrix */
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:14px;color:var(--muted);margin:6px 0 14px}
+.legend i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.scroll{overflow-x:auto;border:1px solid var(--line);border-radius:14px;background:var(--panel)}
+table{border-collapse:separate;border-spacing:0;width:100%;min-width:900px;font-size:14px}
+th,td{padding:10px 8px;text-align:center;border-bottom:1px solid var(--line)}
+tr:last-child td{border-bottom:0}
+thead th{font-weight:600;color:var(--muted);vertical-align:bottom;background:var(--panel)}
+thead tr.lib th{color:var(--text);font-size:14px;border-bottom:0;padding-bottom:2px}
+thead tr.lib th + th{border-left:1px solid var(--line)}
+thead tr.mode th{font:500 12px/1.3 ui-monospace,Consolas,monospace;padding-top:4px}
+.gl{border-left:1px solid var(--line)}
+th.row,td.row{text-align:left;position:sticky;left:0;background:var(--panel);min-width:220px;max-width:260px;font-weight:500;color:var(--text);z-index:1}
+td.row{box-shadow:1px 0 0 var(--line)}
+.c{display:inline-block;white-space:nowrap;min-width:62px;padding:4px 8px;border-radius:999px;font-weight:600;font-size:13px}
+.c.L{background:var(--red-bg);color:var(--red)}
+.c.C{color:var(--faint);font-weight:500}
+.c.O{background:var(--amber-bg);color:var(--amber)}
+tr.hot td.row{color:var(--red)}
+.caption{font-size:14px;color:var(--faint);margin-top:10px}
+
+/* findings */
+.findings{display:grid;gap:16px;margin-top:22px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px 22px 10px;position:relative}
+.card .n{font:700 13px/1 ui-monospace,Consolas,monospace;color:var(--accent);letter-spacing:.08em;margin-bottom:10px;display:block}
+.card ul{margin:0 0 14px;padding-left:20px}
+.card li{margin:4px 0}
+.status{display:inline-block;font-size:13px;font-weight:600;border-radius:999px;padding:3px 10px;margin:0 0 14px}
+.status.new{background:var(--red-bg);color:var(--red)}
+.status.known{background:var(--amber-bg);color:var(--amber)}
+.status.fixed{background:var(--green-bg);color:var(--green)}
+
+/* tool cta */
+.cta{display:grid;grid-template-columns:1.1fr 1fr;gap:28px;align-items:center;background:var(--bg2);border:1px solid var(--line);border-radius:18px;padding:28px}
+.cta img{width:100%;border-radius:10px;border:1px solid var(--line);display:block}
+.btns{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
+.btn{display:inline-block;padding:10px 16px;border-radius:10px;font-weight:600;text-decoration:none;border:1px solid var(--line);color:var(--text)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#14100a}
+@media (max-width:760px){th.row,td.row{min-width:150px;max-width:170px;font-size:13px}.cta{grid-template-columns:1fr;padding:20px}.top nav a{margin-left:0;margin-right:14px}}
+
+dl.versions{display:grid;grid-template-columns:max-content 1fr;gap:6px 18px;font-size:15px;margin:0 0 14px}
+dl.versions dt{color:var(--muted)}dl.versions dd{margin:0;font-family:ui-monospace,Consolas,monospace;font-size:14px}
+footer{margin-top:64px;border-top:1px solid var(--line);padding:24px 0 40px;color:var(--faint);font-size:14px}
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="top">
+      <a class="brand" href="https://github.com/preetsaini2004/traceleakcheck">Trace<span>Leak</span>Check</a>
+      <nav><a href="#results">Results</a><a href="#findings">Findings</a><a href="#method">Method</a><a href="https://github.com/preetsaini2004/traceleakcheck">GitHub</a></nav>
+    </div>
+    <p class="kicker">Survey · November 2026</p>
+    <h1>Do GenAI instrumentations leak your secrets?</h1>
+    <p class="lede">We planted fake API keys in an OpenAI app and captured every byte that five popular OpenTelemetry instrumentations exported. Privacy settings keep prompts out. They don't keep out a secret inside an error message.</p>
+    <div class="stats">
+      <div class="stat r"><b>8 of 9</b><span>configurations exported a secret that appeared in an error message</span></div>
+      <div class="stat r"><b>0 of 3</b><span>content opt-outs stopped it</span></div>
+      <div class="stat a"><b>3 of 9</b><span>never export an abandoned stream: the span stays open, which looks "clean" to a naive checker</span></div>
+      <div class="stat g"><b>0 of 9</b><span>leaked the client's own key from the <code style="background:none;padding:0;color:inherit">Authorization</code> header</span></div>
+    </div>
+  </div>
+</header>
+
+<main>
+<section id="results">
+  <div class="wrap">
+    <h2>Results</h2>
+    <p class="muted narrow">Each cell is one test: a fresh canary secret is planted, the app runs, and every OTLP trace, log and metric export is searched for it, raw or encoded. Every run passed a positive control, so "clean" means telemetry arrived and the secret wasn't in it.</p>
+    <div class="legend"><span><i style="background:var(--red-bg);outline:1px solid var(--red)"></i>leak: the secret was exported</span><span><i style="background:var(--amber-bg);outline:1px solid var(--amber)"></i>open span: never exported, so the result can't be checked</span><span><i style="outline:1px solid var(--faint)"></i>clean</span></div>
+    <div class="scroll" role="region" aria-label="Results matrix" tabindex="0">
+      <table>
+        <thead>
+          <tr class="lib">
+            <th class="row" rowspan="2">Scenario</th>
+            <th colspan="3">OTel openai-v2</th>
+            <th colspan="2">OpenLLMetry</th>
+            <th colspan="2">OpenInference</th>
+            <th>Logfire</th>
+            <th>httpx</th>
+          </tr>
+          <tr class="mode">
+            <th class="gl">default</th><th>content on</th><th>NO_CONTENT</th>
+            <th class="gl">default</th><th>TRACE_CONTENT<br>=false</th>
+            <th class="gl">default</th><th>HIDE_INPUTS<br>/OUTPUTS</th>
+            <th class="gl">default</th>
+            <th class="gl">default</th>
+          </tr>
+        </thead>
+        <tbody id="matrix"></tbody>
+      </table>
+    </div>
+    <p class="caption">"Content on" for openai-v2 means <code>CAPTURE_MESSAGE_CONTENT=SPAN_AND_EVENT</code>; see finding 4 for why <code>=true</code> isn't used. Full raw matrix: <a href="https://github.com/preetsaini2004/traceleakcheck/blob/main/survey/RESULTS.md">RESULTS.md</a>.</p>
+  </div>
+</section>
+
+<section id="findings">
+  <div class="wrap">
+    <h2>Findings</h2>
+    <div class="findings">
+
+      <article class="card">
+        <span class="n">FINDING 1</span>
+        <h3>Content opt-outs do not cover exceptions</h3>
+        <p>All three privacy settings we tested kept prompts, completions and tool arguments out of telemetry: <code>TRACELOOP_TRACE_CONTENT=false</code>, <code>OPENINFERENCE_HIDE_INPUTS</code>/<code>_OUTPUTS</code>, and openai-v2 <code>NO_CONTENT</code>. None of them stopped a secret inside an <b>error message</b>. Instrumentations copy the message into <code>exception.message</code>, <code>exception.stacktrace</code> and the span's <code>status.message</code>; openai-v2 sets <code>status.message</code> only.</p>
+        <ul>
+          <li><b>When it bites:</b> a gateway or proxy echoes a rejected key, an HTTP error includes a URL with a key in it, or a validation error quotes user input. The OpenAI API itself masks keys in its 401 messages.</li>
+          <li><b>Mitigation:</b> none of these settings help. Scrub exception events and status in a span processor or exporter, for example traceleakcheck's <code>scrub()</code>.</li>
+        </ul>
+      </article>
+
+      <article class="card">
+        <span class="n">FINDING 2</span>
+        <h3>URL query secrets are exported by the httpx instrumentation</h3>
+        <span class="status new">Reported: <a href="https://github.com/open-telemetry/opentelemetry-python-contrib/issues/5279">contrib#5279</a></span>
+        <p><code>opentelemetry-util-http</code> 0.66b2 redacts only <code>AWSAccessKeyId</code>, <code>Signature</code>, <code>sig</code> and <code>X-Goog-Signature</code>. The <a href="https://github.com/open-telemetry/semantic-conventions/blob/main/docs/registry/attributes/url.md">semantic conventions</a> also list <code>X-Amz-Signature</code>, <code>X-Amz-Credential</code> and <code>X-Amz-Security-Token</code>, so an S3 presigned URL is exported with its signature and STS session token. Neither list includes <code>key</code>, so APIs that take <code>?key=</code> get it written into <code>url.full</code>.</p>
+      </article>
+
+      <article class="card">
+        <span class="n">FINDING 3</span>
+        <h3>Logfire's default scrubbing skips LLM messages and exception messages</h3>
+        <p>Logfire scrubs by pattern, and <code>api[._ -]?key</code> is one of its patterns. Even so, the prompt <code>OPENAI_API_KEY=&lt;secret&gt;</code> and the error <code>Invalid API key: &lt;secret&gt;</code> both left the process unscrubbed. This is deliberate in 5.4.0: <code>gen_ai.input.messages</code> and <code>gen_ai.output.messages</code> are on its <code>SAFE_KEYS</code> list, and a source comment says exception-message scrubbing was removed.</p>
+      </article>
+
+      <article class="card">
+        <span class="n">FINDING 4</span>
+        <h3>openai-v2's documented legacy <code>=true</code> captures nothing</h3>
+        <span class="status fixed">Docs fixed in the successor package</span>
+        <p>The openai-v2 2.4b0 README documents <code>CAPTURE_MESSAGE_CONTENT=true</code> as the legacy value. On <code>opentelemetry-util-genai</code> 1.x it is rejected, capture falls back to <code>NO_CONTENT</code>, and the only sign is a log warning. A team that thinks it's auditing captured content is auditing nothing. It nearly fooled this survey too, so the runner now flags any capture-enabled config that comes back clean as <code>MISCONFIGURED</code>.</p>
+        <p class="muted">openai-v2 now lives on as <code>opentelemetry-instrumentation-genai-openai</code>, whose README lists only the valid values.</p>
+      </article>
+
+      <article class="card">
+        <span class="n">FINDING 5</span>
+        <h3>A fresh install of openai-v2 fails to import</h3>
+        <span class="status known">Known: <a href="https://github.com/open-telemetry/opentelemetry-python-genai/issues/997">genai#997</a></span>
+        <p><code>pip install opentelemetry-instrumentation-openai-v2</code> resolves <code>opentelemetry-util-genai</code> 1.3b0, which no longer ships <code>opentelemetry.util.genai.instruments</code>, so the import fails with <code>ModuleNotFoundError</code>. Pin <code>opentelemetry-util-genai==1.1b0</code>, or move to <code>opentelemetry-instrumentation-genai-openai</code>.</p>
+      </article>
+
+      <article class="card">
+        <span class="n">FINDING 6</span>
+        <h3>Streaming: split secrets are reassembled, and an abandoned stream can hide a leak</h3>
+        <span class="status known">Known: <a href="https://github.com/open-telemetry/opentelemetry-python-genai/issues/491">genai#491</a></span>
+        <ul>
+          <li><b>Split across chunks:</b> every instrumentation that records content reassembles the reply, so a secret split over two chunks is exported whole.</li>
+          <li><b>Abandoned after one chunk:</b> OpenLLMetry and OpenInference end the span and export the partial reply, secret included. Logfire ends it without the partial reply. openai-v2 <b>never ends the span</b>, and a span that never ends is never exported.</li>
+        </ul>
+        <p>Our first streaming run reported that openai-v2 case as a <b>false "clean"</b>. traceleakcheck now tracks spans that start during a test and never end, and reports the test as <code>incomplete</code>.</p>
+      </article>
+
+    </div>
+  </div>
+</section>
+
+<section id="method">
+  <div class="wrap narrow">
+    <h2>Method</h2>
+    <ul>
+      <li><b>No real API.</b> A local fake OpenAI server returns canned completions, tool calls, SSE streams and a 401 error.</li>
+      <li><b>Fresh secrets.</b> Each test plants a new canary in a realistic <code>sk-proj-…</code> format.</li>
+      <li><b>Every export searched.</b> traceleakcheck receives OTLP over HTTP and gRPC and matches raw, base64 (any offset), URL, hex and truncated forms. Every leak above was raw.</li>
+      <li><b>Positive control.</b> A marker is sent through each pipeline after each test, so "nothing arrived" never counts as clean.</li>
+      <li><b>Defaults otherwise.</b> Attribute length limits were left alone, so nothing was truncated.</li>
+    </ul>
+    <dl class="versions">
+      <dt>openai</dt><dd>2.54.0</dd>
+      <dt>opentelemetry-sdk</dt><dd>1.45.2</dd>
+      <dt>openai-v2</dt><dd>2.4b0 (util-genai 1.1b0)</dd>
+      <dt>OpenLLMetry</dt><dd>0.62.4</dd>
+      <dt>OpenInference</dt><dd>0.1.69</dd>
+      <dt>Logfire</dt><dd>5.4.0</dd>
+      <dt>httpx instr.</dt><dd>0.66b2</dd>
+    </dl>
+    <p>Results describe these versions. Re-run on yours:</p>
+<pre><code>git clone https://github.com/preetsaini2004/traceleakcheck
+cd traceleakcheck
+uv sync --group survey
+uv run python survey/run.py</code></pre>
+  </div>
+</section>
+
+<section id="tool">
+  <div class="wrap">
+    <div class="cta">
+      <div>
+        <h2>Check your own app</h2>
+        <p>traceleakcheck is the pytest plugin that produced this survey. It plants a fake secret, captures everything your app's real telemetry exports, and tells you in plain English where it leaked. <code>scrub()</code> fixes it; the next run proves it.</p>
+<pre><code>pip install traceleakcheck
+pytest --traceleak</code></pre>
+        <div class="btns">
+          <a class="btn primary" href="https://github.com/preetsaini2004/traceleakcheck">View on GitHub</a>
+          <a class="btn" href="https://pypi.org/project/traceleakcheck/">PyPI</a>
+        </div>
+      </div>
+      <img src="readme/terminal.png" alt="traceleakcheck terminal output: 1 leak found in the error message, stack trace and status of step llm.call; after scrub(), 1 clean" loading="lazy">
+    </div>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">Survey run 2026-11-01, upstream status checked 2026-11-02. Apache-2.0. Found a mistake? <a href="https://github.com/preetsaini2004/traceleakcheck/issues">Open an issue</a>.</div>
+</footer>
+
+<script>
+// L = leak, C = clean, O = open span. Columns follow the header order.
+const rows = [
+  ["Secret pasted in the prompt",                     "CLCLCLCLC"],
+  ["Secret repeated in the completion",               "CLCLCLCLC"],
+  ["Secret in tool-call arguments",                   "CLCLCLCLC"],
+  ["Secret in a streamed reply, split across chunks", "CLCLCLCLC"],
+  ["Streamed reply abandoned after the first chunk",  "OOOLCLCCC"],
+  ["API key in Authorization header",                 "CCCCCCCCC"],
+  ["API key in URL query (?key=)",                    "CCCCCCCCL"],
+  ["Error message echoes the API key",                "LLLLLLLLC", true],
+];
+const label = {L:"leak", C:"clean", O:"open span"};
+const groupStart = new Set([0,3,5,7,8]);
+document.getElementById("matrix").innerHTML = rows.map(([name, cells, hot]) =>
+  `<tr${hot ? ' class="hot"' : ""}><td class="row">${name}</td>` +
+  [...cells].map((k, i) => `<td${groupStart.has(i) ? ' class="gl"' : ""}><span class="c ${k}">${label[k]}</span></td>`).join("") +
+  "</tr>").join("");
+</script>
+</body>
+</html>

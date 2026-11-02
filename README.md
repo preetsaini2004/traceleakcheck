@@ -14,7 +14,7 @@
   <a href="#how-it-works">How it works</a> ·
   <a href="#fix-it-the-safety-filter">Safety filter</a> ·
   <a href="#tested-on-real-code">Real-world test</a> ·
-  <a href="https://github.com/preetsaini2004/traceleakcheck/blob/main/survey/FINDINGS.md">Survey</a>
+  <a href="https://preetsaini2004.github.io/traceleakcheck/">Survey</a>
 </p>
 
 ---
@@ -109,7 +109,10 @@ One secret becomes many copies, because every layer of an agent (chat step, agen
 
 ## Survey: do GenAI instrumentations leak secrets?
 
-[survey/FINDINGS.md](https://github.com/preetsaini2004/traceleakcheck/blob/main/survey/FINDINGS.md) runs the OpenAI SDK under OTel openai-v2, OpenLLMetry, OpenInference, Logfire and httpx instrumentation, across 6 leak scenarios:
+**[Read the survey as a page](https://preetsaini2004.github.io/traceleakcheck/)**, with the full results matrix.
+
+
+[survey/FINDINGS.md](https://github.com/preetsaini2004/traceleakcheck/blob/main/survey/FINDINGS.md) runs the OpenAI SDK under OTel openai-v2, OpenLLMetry, OpenInference, Logfire and httpx instrumentation, across 8 leak scenarios:
 
 - **No content opt-out we tested stops a secret in an error message.** That includes `TRACELOOP_TRACE_CONTENT=false`, `OPENINFERENCE_HIDE_*` and `NO_CONTENT`.
 - **`?key=` query auth is exported verbatim** in `http.url`.

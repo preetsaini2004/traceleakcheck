@@ -2,7 +2,7 @@
 
 *traceleakcheck survey, 2026-11-01. Raw matrix: [RESULTS.md](RESULTS.md). Reproduce: `uv sync --group survey && uv run python survey/run.py`.*
 
-We ran the OpenAI Python SDK under five OpenTelemetry instrumentations, plus a bare baseline. Six scenarios each plant a canary secret. traceleakcheck captured every OTLP export (traces, logs, metrics) and searched it for the canary in raw and encoded forms. Every run passed the positive control, so telemetry provably arrived. "Clean" therefore means the canary was in nothing that was exported. As #4 shows, that only means something if the library was really configured to capture content. `run.py` therefore marks any capture-enabled config whose content scenarios come back clean as `MISCONFIGURED`.
+We ran the OpenAI Python SDK under five OpenTelemetry instrumentations, plus a bare baseline. Eight scenarios each plant a canary secret. traceleakcheck captured every OTLP export (traces, logs, metrics) and searched it for the canary in raw and encoded forms. Every run passed the positive control, so telemetry provably arrived. "Clean" therefore means the canary was in nothing that was exported. As #4 shows, that only means something if the library was really configured to capture content. `run.py` therefore marks any capture-enabled config whose content scenarios come back clean as `MISCONFIGURED`.
 
 Versions tested: openai 2.54.0, opentelemetry-sdk 1.45.2, opentelemetry-instrumentation-openai-v2 2.4b0, OpenLLMetry `opentelemetry-instrumentation-openai` 0.62.4, `openinference-instrumentation-openai` 0.1.69, logfire 5.4.0, `opentelemetry-instrumentation-httpx` 0.66b2.
 
