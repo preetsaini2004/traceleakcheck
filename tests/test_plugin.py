@@ -195,3 +195,16 @@ def test_app_hardwired_to_grpc_exporter_is_checked(pytester):
           header=GRPC_HEADER)
     r = pytester.runpytest_subprocess("--traceleak", timeout=120)
     r.stdout.fnmatch_lines(["*Result: 1 clean, 1 leak, 0 incomplete, 0 error*"])
+
+
+def test_demo_agent_is_clean_with_safety_filter(pytester):
+    import pathlib
+    demo = pathlib.Path(__file__).parent.parent / "examples" / "demo_agent"
+    app = (demo / "app.py").read_text()
+    fixed = app.replace("BatchSpanProcessor(OTLPSpanExporter())",
+                        "BatchSpanProcessor(__import__('traceleakcheck.guard').guard.scrub(OTLPSpanExporter()))")
+    assert fixed != app
+    pytester.makepyfile(app=fixed, test_agent=(demo / "test_agent.py").read_text())
+    r = pytester.runpytest_subprocess("--traceleak", timeout=120)
+    r.assert_outcomes(passed=2)
+    r.stdout.fnmatch_lines(["*Result: 1 clean, 0 leak, 0 incomplete, 0 error*"])

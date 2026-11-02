@@ -68,6 +68,25 @@ TRACELEAK LEAK: canary secret found in exported telemetry:
 
 An HTTP error echoed the key, and the OTel SDK copied the exception text into both the exception event and the span status.
 
+### Fix it: the safety filter
+
+Finding leaks is half the job. Wrap the exporter your app already uses, in production code and not just in tests:
+
+```python
+from traceleakcheck.guard import scrub
+
+tracer_provider.add_span_processor(BatchSpanProcessor(scrub(OTLPSpanExporter())))
+logger_provider.add_log_record_processor(BatchLogRecordProcessor(scrub(OTLPLogExporter())))
+```
+
+Before anything is exported, the filter removes:
+- **Known secrets:** the values of environment variables named like `*KEY*`, `*TOKEN*`, `*SECRET*` or `*PASSWORD*`, plus anything registered with `add_secret()` or `scrub(secrets=[...])`. Their base64, URL and hex forms are removed too.
+- **Well-known key formats:** OpenAI, Anthropic, AWS, GitHub, Google, Slack, JWT and Bearer tokens, and credential query parameters such as `?key=`.
+
+It covers span names, attributes, exception events, status messages, log bodies and log attributes. Metrics aren't filtered.
+
+A filter can't know about a secret that matches none of these rules. So keep running `pytest --traceleak`: the filter is the fix, and traceleakcheck is the proof. The demo agent above leaks in 3 places, and with `scrub()` it comes back `clean`.
+
 ### Library API
 
 ```python

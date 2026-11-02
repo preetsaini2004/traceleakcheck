@@ -83,13 +83,20 @@ def make_canary(kind: str = "openai") -> Canary:
     if kind not in _GENERATORS:
         raise ValueError(f"unknown canary kind {kind!r}; choose from {KINDS}")
     value = _GENERATORS[kind]()
-    raw = value.encode()
     variants: dict[str, str] = {"raw": value}
     # Instrumentations truncate long attributes (OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT); a cut-off
     # secret is still a leak.
     prefix = value[: _STATIC_LEN[kind] + _MIN_FRAGMENT]
     if len(prefix) < len(value):
         variants["truncated"] = prefix
+    variants |= encoded_forms(value)
+    return Canary(kind=kind, value=value, variants=variants)
+
+
+def encoded_forms(value: str) -> dict[str, str]:
+    """base64 (any offset), base64url, URL and hex forms of `value`. Keys name the encoding."""
+    raw = value.encode()
+    variants: dict[str, str] = {}
     for i, frag in enumerate(_b64_fragments(raw)):
         variants[f"base64[{i}]"] = frag
         urlsafe = frag.replace("+", "-").replace("/", "_")
@@ -99,4 +106,4 @@ def make_canary(kind: str = "openai") -> Canary:
     if quoted != value:
         variants["url"] = quoted
     variants["hex"] = raw.hex()  # scanner matches this case-insensitively
-    return Canary(kind=kind, value=value, variants=variants)
+    return variants

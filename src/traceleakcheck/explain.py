@@ -70,6 +70,15 @@ TIPS = {
     ),
 }
 
+SAFETY_NET = Tip(
+    "Add a safety net for the whole app",
+    "Wrap your exporter with traceleakcheck's filter. It removes known secrets (secret-named env vars, "
+    "common key formats, ?key= in URLs) from everything before it leaves your app. Then re-run "
+    "pytest --traceleak to prove it worked.",
+    "from traceleakcheck.guard import scrub\n"
+    "provider.add_span_processor(BatchSpanProcessor(scrub(OTLPSpanExporter())))",
+)
+
 INCOMPLETE_TIP = Tip(
     "We couldn't check",
     "Some or all of your app's monitoring data never reached TraceLeakCheck, so it can't promise "
@@ -177,7 +186,7 @@ def explain(result: dict) -> Explanation:
         else:
             groups[sig] = Group([step], places, [p.path for p in places])
     exp.groups = list(groups.values())
-    exp.tips = [TIPS[k] for k in tip_keys]
+    exp.tips = [TIPS[k] for k in tip_keys] + [SAFETY_NET]
     return exp
 
 
