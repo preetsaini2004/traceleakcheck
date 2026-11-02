@@ -198,6 +198,46 @@ def test_resource_and_link_attributes_scrubbed():
     assert "shop" in str(payloads)  # the rest of the resource survives
 
 
+def test_dropped_counts_survive_scrubbing(monkeypatch):
+    # An app that hits its limits must still tell its backend how much it dropped.
+    from opentelemetry.sdk.trace import SpanLimits
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+    from opentelemetry.trace import Link
+
+    c = make_canary("password")
+    inner = InMemorySpanExporter()
+    p = TracerProvider(span_limits=SpanLimits(
+        max_span_attributes=2, max_events=1, max_links=1, max_event_attributes=1, max_link_attributes=1))
+    p.add_span_processor(SimpleSpanProcessor(scrub(inner, secrets=[c.value], env=False)))
+    t = p.get_tracer("t")
+    other = t.start_span("other")
+    ctx = other.get_span_context()
+    sp = t.start_span("s", attributes={"a": 1, "b": 2, "c": 3, "secret": c.value},
+                      links=[Link(ctx), Link(ctx, {"x": 1, "y": c.value})])  # the SDK keeps the newest
+    sp.add_event("e1")
+    sp.add_event("e2")
+    sp.add_event("e3", {"m": 1, "n": c.value})
+    sp.end()
+    other.end()
+    out = next(s for s in inner.get_finished_spans() if s.name == "s")
+
+    assert (out.dropped_attributes, out.dropped_events, out.dropped_links) == (2, 2, 1)
+    assert out.links[0].dropped_attributes == 1
+    assert out.events[0].dropped_attributes == 1
+    assert out.attributes["secret"] == out.links[0].attributes["y"] == out.events[0].attributes["n"] == REDACTED
+
+    monkeypatch.setenv("OTEL_ATTRIBUTE_COUNT_LIMIT", "1")
+    with OTLPReceiver() as rx:
+        lp = LoggerProvider()
+        lp.add_log_record_processor(SimpleLogRecordProcessor(
+            scrub(OTLPLogExporter(endpoint=rx.endpoint + "/v1/logs"), secrets=[c.value], env=False)))
+        lp.get_logger("t").emit(LogRecord(body="x", attributes={"a": 1, "b": 2, "pw": c.value}))
+        lp.shutdown()
+        payloads = rx.snapshot()
+    assert scan(payloads, [c]) == []
+    assert "'droppedAttributesCount': 2" in str(payloads)
+
+
 def test_rejects_non_exporters():
     with pytest.raises(TypeError):
         scrub(object())

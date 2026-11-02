@@ -30,9 +30,11 @@ import os
 import re
 from collections.abc import Iterable, Mapping, Sequence
 
+from opentelemetry.attributes import BoundedAttributes
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import Event, ReadableSpan
 from opentelemetry.sdk.trace.export import SpanExporter, SpanExportResult
+from opentelemetry.sdk.util import BoundedList
 from opentelemetry.trace import Link, Status
 
 from .canary import encoded_forms
@@ -79,6 +81,25 @@ def _env_secret(name: str, value: str) -> bool:
     if _UNAMBIGUOUS_ENV_NAME.search(name):  # a passphrase may contain spaces
         return True
     return not any(ch.isspace() for ch in value) and not _PLAIN_VALUE.fullmatch(value)
+
+
+# The SDK reports how many attributes, events and links it dropped (the OTLP dropped_*_count
+# fields) by reading .dropped on its bounded containers. Rebuilding them as a plain dict or list
+# would reset those counts to 0 and hide data loss from the backend, so carry them over.
+def _keep_dropped_attrs(clean, dropped: int):
+    if not dropped or clean is None:
+        return clean
+    bounded = BoundedAttributes(attributes=clean, immutable=True)
+    bounded.dropped = dropped
+    return bounded
+
+
+def _keep_dropped_items(clean: list, dropped: int):
+    if not dropped:
+        return clean
+    bounded = BoundedList.from_seq(None, clean)
+    bounded.dropped = dropped
+    return bounded
 
 
 _registered: set[str] = set()
@@ -139,8 +160,8 @@ class Scrubber:
             return tuple(self.value(x) for x in v)
         return v
 
-    def attrs(self, a):
-        return None if a is None else self.value(dict(a))
+    def attrs(self, a, dropped: int = 0):
+        return None if a is None else _keep_dropped_attrs(self.value(dict(a)), dropped)
 
     def resource(self, r: Resource | None) -> Resource | None:
         """Scrubbed copy of a resource, cached because every span and log shares the same one."""
@@ -167,9 +188,13 @@ class ScrubbingSpanExporter(SpanExporter):
             status = Status(status.status_code, s.text(status.description))
         return ReadableSpan(
             name=s.text(sp.name), context=sp.context, parent=sp.parent, resource=s.resource(sp.resource),
-            attributes=s.attrs(sp.attributes),
-            events=[Event(s.text(e.name), s.attrs(e.attributes), e.timestamp) for e in sp.events],
-            links=[Link(lk.context, s.attrs(lk.attributes)) for lk in sp.links],
+            attributes=s.attrs(sp.attributes, sp.dropped_attributes),
+            events=_keep_dropped_items([
+                Event(s.text(e.name), s.attrs(e.attributes, e.dropped_attributes), e.timestamp)
+                for e in sp.events], sp.dropped_events),
+            links=_keep_dropped_items([
+                Link(lk.context, s.attrs(lk.attributes, lk.dropped_attributes))
+                for lk in sp.links], sp.dropped_links),
             kind=sp.kind, status=status, start_time=sp.start_time,
             end_time=sp.end_time, instrumentation_scope=sp.instrumentation_scope,
         )
@@ -197,9 +222,13 @@ class _ScrubbingLogExporterMixin:
         self.inner, self.s = inner, scrubber
 
     def _record(self, item):
+        # Newer SDKs count drops on the ReadableLogRecord, older ones on the record itself.
+        dropped = getattr(item, "dropped_attributes", None)
+        if dropped is None:
+            dropped = getattr(item.log_record, "dropped_attributes", 0)
         lr = copy.copy(item.log_record)
         lr.body = self.s.value(lr.body)
-        lr.attributes = self.s.attrs(lr.attributes)
+        lr.attributes = self.s.attrs(lr.attributes, dropped or 0)
         if isinstance(getattr(lr, "resource", None), Resource):  # older SDKs keep it on the record
             lr.resource = self.s.resource(lr.resource)
         if dataclasses.is_dataclass(item):  # newer SDKs: a frozen ReadableLogRecord
