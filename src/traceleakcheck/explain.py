@@ -14,6 +14,7 @@ KIND_NAMES = {
     "anthropic": "Anthropic API key",
     "aws": "AWS access key",
     "github": "GitHub token",
+    "azure": "Azure OpenAI key",
     "jwt": "login token (JWT)",
     "password": "password",
 }
