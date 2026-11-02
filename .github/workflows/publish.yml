@@ -1,0 +1,24 @@
+name: publish
+
+# Runs only when a GitHub release is published. Uses PyPI trusted publishing (OIDC):
+# no API token is stored anywhere. One-time setup on pypi.org: add a "pending publisher"
+# for project traceleakcheck, owner preetsaini2004, repo traceleakcheck, workflow publish.yml,
+# environment pypi.
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  pypi:
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv build
+      - uses: pypa/gh-action-pypi-publish@release/v1
