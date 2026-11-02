@@ -23,9 +23,10 @@ def test_leak_fails_test_and_names_field(pytester):
     _make(pytester,
           "def run(k):\n    with tracer.start_as_current_span('chat') as s:\n        s.set_attribute('prompt', k)\n",
           "from app import run\ndef test_it(canary):\n    run(canary('aws').value)\n")
-    r = pytester.runpytest_subprocess("--traceleak")
+    r = pytester.runpytest_subprocess("--traceleak", "-v")
     r.assert_outcomes(passed=1, errors=1)
-    r.stdout.fnmatch_lines(["*TRACELEAK LEAK*", "*aws canary (raw) in span 'chat'*attributes[[]prompt]*"])
+    r.stdout.fnmatch_lines(["*LEAK FOUND: Your AWS access key leaked*", '*In step "chat"*',
+                            "*the saved prompt (prompt) (in plain text)*", "*attributes[[]prompt]*"])
 
 
 def test_leak_found_even_when_app_env_samples_nothing(pytester, monkeypatch):
@@ -35,7 +36,7 @@ def test_leak_found_even_when_app_env_samples_nothing(pytester, monkeypatch):
           "def run(k):\n    with tracer.start_as_current_span('chat') as s:\n        s.set_attribute('prompt', k)\n",
           "from app import run\ndef test_it(canary):\n    run(canary().value)\n")
     r = pytester.runpytest_subprocess("--traceleak")
-    r.stdout.fnmatch_lines(["*TRACELEAK LEAK*"])
+    r.stdout.fnmatch_lines(["*LEAK FOUND*"])
 
 
 def test_redacted_app_is_clean(pytester):
@@ -52,7 +53,7 @@ def test_unconfigured_app_is_incomplete_not_clean(pytester):
           header="")
     r = pytester.runpytest_subprocess("--traceleak")
     r.assert_outcomes(passed=1, errors=1)
-    r.stdout.fnmatch_lines(["*TRACELEAK INCOMPLETE*"])
+    r.stdout.fnmatch_lines(["*COULDN'T CHECK*"])
 
 
 def test_canary_without_flag_errors_clearly(pytester):
@@ -79,7 +80,7 @@ def test_demo_agent_leaks_via_exception(pytester):
         (pytester.path / f).write_text((demo / f).read_text())
     r = pytester.runpytest_subprocess("--traceleak")
     r.assert_outcomes(passed=2, errors=1)
-    r.stdout.fnmatch_lines(["*span 'llm.call' at *status.message*"])
+    r.stdout.fnmatch_lines(["*the step's status message (in plain text)*"])
 
 
 def test_leak_during_fixture_teardown_caught(pytester):
@@ -90,7 +91,7 @@ def test_leak_during_fixture_teardown_caught(pytester):
           "def test_it(client):\n    pass\n")
     r = pytester.runpytest_subprocess("--traceleak")
     r.assert_outcomes(passed=1, errors=1)
-    r.stdout.fnmatch_lines(["*span 'close'*"])
+    r.stdout.fnmatch_lines(['*In step "close"*'])
 
 
 def test_xdist_workers_report_to_controller(pytester):
@@ -126,7 +127,7 @@ TEST_RUN = "from app import run\ndef test_it(canary):\n    run(canary().value)\n
 def test_logs_only_app_leak_found(pytester):
     _make(pytester, LOG_RUN, TEST_RUN, header=LOGS_HEADER)
     r = pytester.runpytest_subprocess("--traceleak", "-W", "ignore::DeprecationWarning")
-    r.stdout.fnmatch_lines(["*TRACELEAK LEAK*", "*canary (raw) in logs at*"])
+    r.stdout.fnmatch_lines(["*LEAK FOUND*", "*In a log record*"])
 
 
 def test_logs_only_app_clean(pytester):
@@ -141,7 +142,7 @@ def test_broken_logs_pipeline_is_incomplete_even_with_working_traces(pytester):
     _make(pytester, LOG_RUN, TEST_RUN, header=header)
     r = pytester.runpytest_subprocess("--traceleak", "-W", "ignore::DeprecationWarning")
     r.assert_outcomes(passed=1, errors=1)
-    r.stdout.fnmatch_lines(["*TRACELEAK INCOMPLETE*never arrived on: logs*"])
+    r.stdout.fnmatch_lines(["*Details: the control marker never arrived on: logs*"])
 
 
 METRICS_HEADER = APP_HEADER + """
@@ -160,3 +161,13 @@ def test_non_otlp_metrics_reader_is_incomplete_unless_ignored(pytester):
     r.stdout.fnmatch_lines(["*never arrived on: metrics*"])
     r = pytester.runpytest_subprocess("--traceleak", "--traceleak-ignore=metrics")
     r.assert_outcomes(passed=1)
+
+
+def test_html_report_written(pytester):
+    _make(pytester,
+          "def run(k):\n    with tracer.start_as_current_span('chat') as s:\n        s.set_attribute('prompt', k)\n",
+          "from app import run\ndef test_it(canary):\n    run(canary('aws').value)\n")
+    r = pytester.runpytest_subprocess("--traceleak", "--traceleak-html=out.html")
+    r.stdout.fnmatch_lines(["*HTML report:*out.html*"])
+    html = (pytester.path / "out.html").read_text(encoding="utf-8")
+    assert "Your AWS access key leaked" in html and "How to fix" in html

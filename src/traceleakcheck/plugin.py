@@ -12,6 +12,7 @@ from dataclasses import asdict
 import pytest
 
 from .canary import Canary, make_canary
+from .explain import terminal_lines
 from .scanner import RAW_KEY, scan
 
 MARKER_SPAN = "traceleakcheck.marker"
@@ -150,11 +151,6 @@ def _emit_marker(signal: str, provider, nonce: str) -> None:
         provider.get_meter("traceleakcheck").create_counter(MARKER_SPAN).add(1, attrs)
 
 
-def _describe(f: dict) -> str:
-    where = f"span '{f['span']}'" if f["span"] else f["signal"]
-    return f"{f['canary_kind']} canary ({f['variant']}) in {where} at {f['path']}"
-
-
 # --- hooks -------------------------------------------------------------------------------------
 
 
@@ -163,6 +159,7 @@ def pytest_addoption(parser):
     group.addoption("--traceleak", action="store_true",
                     help="point OTLP exporters at a local receiver and fail tests whose canaries leak")
     group.addoption("--traceleak-report", metavar="PATH", help="write a JSON report of every checked test")
+    group.addoption("--traceleak-html", metavar="PATH", help="write a plain-English HTML report to open in a browser")
     group.addoption("--traceleak-ignore", metavar="SIGNALS", default="",
                     help="comma list of signals (traces,logs,metrics) not to require a control marker on, "
                     "e.g. metrics exported by a Prometheus reader instead of OTLP")
@@ -224,11 +221,10 @@ def pytest_runtest_teardown(item, nextitem):
     ignore = {s.strip() for s in item.config.getoption("traceleak_ignore").split(",") if s.strip()}
     result = tl.check(item.nodeid, canaries, ignore)
     item.user_properties.append((_PROP, result))
-    if result["status"] == "leak":
-        lines = "\n  - ".join(_describe(f) for f in result["findings"])
-        pytest.fail(f"TRACELEAK LEAK: canary secret found in exported telemetry:\n  - {lines}", pytrace=False)
     if result["status"] != "clean":
-        pytest.fail(f"TRACELEAK {result['status'].upper()}: {result['detail']}", pytrace=False)
+        # pytest titles this "ERROR at teardown"; say plainly what that means.
+        lines = terminal_lines(result, verbose=item.config.get_verbosity() > 0)
+        pytest.fail("traceleakcheck checked this test after it finished:\n" + "\n".join(lines), pytrace=False)
     return out
 
 
@@ -249,18 +245,29 @@ def pytest_terminal_summary(terminalreporter, config):
     results = list(_results_sink)
     counts = {s: sum(r["status"] == s for r in results) for s in STATUSES}
     terminalreporter.section("traceleakcheck")
-    terminalreporter.write_line(", ".join(f"{n} {s}" for s, n in counts.items()))
+    verbose = config.get_verbosity() > 0
     for r in results:
         if r["status"] != "clean":
-            terminalreporter.write_line(f"{r['status'].upper()} {r['nodeid']}")
-            for f in r["findings"]:
-                terminalreporter.write_line(f"    {_describe(f)}")
+            terminalreporter.write_line(r["nodeid"])
+            for line in terminal_lines(r, verbose):
+                terminalreporter.write_line("  " + line)
+            terminalreporter.write_line("")
+    terminalreporter.write_line("Result: " + ", ".join(f"{n} {s}" for s, n in counts.items()))
+    if counts["leak"] and not verbose:
+        terminalreporter.write_line("(run with -v for exact field paths, or --traceleak-html=report.html for a page)")
 
     report = {"summary": counts, "results": results}
     path = config.getoption("traceleak_report")
     if path:
         with open(path, "w", encoding="utf-8") as fh:
             json.dump(report, fh, indent=2)
+    html_path = config.getoption("traceleak_html")
+    if html_path:
+        from .html_report import render
+
+        with open(html_path, "w", encoding="utf-8") as fh:
+            fh.write(render(report))
+        terminalreporter.write_line(f"HTML report: {os.path.abspath(html_path)}")
     summary = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary:
         with open(summary, "a", encoding="utf-8") as fh:

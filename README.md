@@ -19,8 +19,23 @@ def test_agent_does_not_leak_key(canary):
 ```
 
 ```sh
-pytest --traceleak                        # optional: --traceleak-report=leaks.json
+pytest --traceleak                          # plain-English results in the terminal
+pytest --traceleak --traceleak-html=report.html   # + a report page to open in your browser
+pytest --traceleak -v                       # + exact technical field paths
 ```
+
+Each leak is explained in plain English: which secret leaked, in which step, in which part of the data, and how to fix it:
+
+```
+LEAK FOUND: Your OpenAI API key leaked into your app's monitoring data (3 places).
+  In step "llm.call":
+    - the error message (in plain text)
+    - the error's stack trace (in plain text)
+    - the step's status message (in plain text)
+  How to fix: An error message is carrying the secret. ...
+```
+
+pytest lists a leak as `ERROR at teardown`, because the check runs after the test and its fixtures finish.
 
 `--traceleak` starts the receiver and points the standard `OTEL_EXPORTER_OTLP_*` env vars at it before your `conftest.py` loads. Any app that configures OTel from the environment needs no changes. If your app builds a provider by hand, register it with `traceleak.watch(provider)`.
 
