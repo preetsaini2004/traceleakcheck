@@ -5,7 +5,8 @@
 # messages, log bodies and attributes, metric attributes, resource attributes):
 #   - well-known key formats: OpenAI/Anthropic (sk-...), AWS (AKIA...), GitHub (gh?_...),
 #     Google (AIza...), Slack (xox?-...), JWTs and Bearer tokens
-#   - credential query parameters: ?key= ?api_key= ?token= ?sig= ?X-Amz-Signature= ...
+#   - credential query parameters: ?key= ?api_key= ?token= ?password= ?sig= ?X-Amz-Signature=
+#     ?X-Goog-Signature= ... (every key the semantic conventions say to redact, and more)
 # It can't recognise a secret with no known shape (say, a password a user types). Prove it covers
 # your app with: traceleakcheck run --port 4400 --app-endpoint http://127.0.0.1:4318 -- <your app>
 #
@@ -23,30 +24,46 @@ receivers:
 processors:
   transform/redact-secrets:
     error_mode: ignore # e.g. a log body that's a map, not a string: skip that statement, keep the record
+    # Each field gets two rules: well-known key formats, then credential query parameters.
     trace_statements:
       - context: resource
         statements:
           - replace_all_patterns(attributes, "value", "(sk-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{30,}|AIza[0-9A-Za-z_-]{35}|xox[abpors]-[A-Za-z0-9-]{10,}|eyJ[A-Za-z0-9_-]{8,}[.][A-Za-z0-9_-]{8,}[.][A-Za-z0-9_-]{8,}|(?i:bearer)[[:space:]]+[A-Za-z0-9._~+/=-]{16,})", "[REDACTED]")
+          - replace_all_patterns(attributes, "value", "((?i)[?&](key|api[_-]?key|apikey|token|access_token|auth|sig|signature|secret|password|awsaccesskeyid|x-amz-signature|x-amz-credential|x-amz-security-token|x-goog-signature|x-goog-credential)=)[^&[:space:]]+", "$${1}[REDACTED]")
       - context: span
         statements:
           - replace_pattern(name, "(sk-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{30,}|AIza[0-9A-Za-z_-]{35}|xox[abpors]-[A-Za-z0-9-]{10,}|eyJ[A-Za-z0-9_-]{8,}[.][A-Za-z0-9_-]{8,}[.][A-Za-z0-9_-]{8,}|(?i:bearer)[[:space:]]+[A-Za-z0-9._~+/=-]{16,})", "[REDACTED]")
+          - replace_pattern(name, "((?i)[?&](key|api[_-]?key|apikey|token|access_token|auth|sig|signature|secret|password|awsaccesskeyid|x-amz-signature|x-amz-credential|x-amz-security-token|x-goog-signature|x-goog-credential)=)[^&[:space:]]+", "$${1}[REDACTED]")
           - replace_all_patterns(attributes, "value", "(sk-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{30,}|AIza[0-9A-Za-z_-]{35}|xox[abpors]-[A-Za-z0-9-]{10,}|eyJ[A-Za-z0-9_-]{8,}[.][A-Za-z0-9_-]{8,}[.][A-Za-z0-9_-]{8,}|(?i:bearer)[[:space:]]+[A-Za-z0-9._~+/=-]{16,})", "[REDACTED]")
-          - replace_all_patterns(attributes, "value", "((?i)[?&](key|api[_-]?key|token|access_token|sig|signature|x-amz-signature|x-amz-credential|x-amz-security-token)=)[^&[:space:]]+", "$${1}[REDACTED]")
+          - replace_all_patterns(attributes, "value", "((?i)[?&](key|api[_-]?key|apikey|token|access_token|auth|sig|signature|secret|password|awsaccesskeyid|x-amz-signature|x-amz-credential|x-amz-security-token|x-goog-signature|x-goog-credential)=)[^&[:space:]]+", "$${1}[REDACTED]")
           - replace_pattern(status.message, "(sk-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{30,}|AIza[0-9A-Za-z_-]{35}|xox[abpors]-[A-Za-z0-9-]{10,}|eyJ[A-Za-z0-9_-]{8,}[.][A-Za-z0-9_-]{8,}[.][A-Za-z0-9_-]{8,}|(?i:bearer)[[:space:]]+[A-Za-z0-9._~+/=-]{16,})", "[REDACTED]")
+          - replace_pattern(status.message, "((?i)[?&](key|api[_-]?key|apikey|token|access_token|auth|sig|signature|secret|password|awsaccesskeyid|x-amz-signature|x-amz-credential|x-amz-security-token|x-goog-signature|x-goog-credential)=)[^&[:space:]]+", "$${1}[REDACTED]")
       - context: spanevent # exception.message and exception.stacktrace live here
         statements:
           - replace_pattern(name, "(sk-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{30,}|AIza[0-9A-Za-z_-]{35}|xox[abpors]-[A-Za-z0-9-]{10,}|eyJ[A-Za-z0-9_-]{8,}[.][A-Za-z0-9_-]{8,}[.][A-Za-z0-9_-]{8,}|(?i:bearer)[[:space:]]+[A-Za-z0-9._~+/=-]{16,})", "[REDACTED]")
+          - replace_pattern(name, "((?i)[?&](key|api[_-]?key|apikey|token|access_token|auth|sig|signature|secret|password|awsaccesskeyid|x-amz-signature|x-amz-credential|x-amz-security-token|x-goog-signature|x-goog-credential)=)[^&[:space:]]+", "$${1}[REDACTED]")
           - replace_all_patterns(attributes, "value", "(sk-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{30,}|AIza[0-9A-Za-z_-]{35}|xox[abpors]-[A-Za-z0-9-]{10,}|eyJ[A-Za-z0-9_-]{8,}[.][A-Za-z0-9_-]{8,}[.][A-Za-z0-9_-]{8,}|(?i:bearer)[[:space:]]+[A-Za-z0-9._~+/=-]{16,})", "[REDACTED]")
-          - replace_all_patterns(attributes, "value", "((?i)[?&](key|api[_-]?key|token|access_token|sig|signature|x-amz-signature|x-amz-credential|x-amz-security-token)=)[^&[:space:]]+", "$${1}[REDACTED]")
+          - replace_all_patterns(attributes, "value", "((?i)[?&](key|api[_-]?key|apikey|token|access_token|auth|sig|signature|secret|password|awsaccesskeyid|x-amz-signature|x-amz-credential|x-amz-security-token|x-goog-signature|x-goog-credential)=)[^&[:space:]]+", "$${1}[REDACTED]")
     log_statements:
+      - context: resource
+        statements:
+          - replace_all_patterns(attributes, "value", "(sk-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{30,}|AIza[0-9A-Za-z_-]{35}|xox[abpors]-[A-Za-z0-9-]{10,}|eyJ[A-Za-z0-9_-]{8,}[.][A-Za-z0-9_-]{8,}[.][A-Za-z0-9_-]{8,}|(?i:bearer)[[:space:]]+[A-Za-z0-9._~+/=-]{16,})", "[REDACTED]")
+          - replace_all_patterns(attributes, "value", "((?i)[?&](key|api[_-]?key|apikey|token|access_token|auth|sig|signature|secret|password|awsaccesskeyid|x-amz-signature|x-amz-credential|x-amz-security-token|x-goog-signature|x-goog-credential)=)[^&[:space:]]+", "$${1}[REDACTED]")
       - context: log
         statements:
           - replace_pattern(body, "(sk-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{30,}|AIza[0-9A-Za-z_-]{35}|xox[abpors]-[A-Za-z0-9-]{10,}|eyJ[A-Za-z0-9_-]{8,}[.][A-Za-z0-9_-]{8,}[.][A-Za-z0-9_-]{8,}|(?i:bearer)[[:space:]]+[A-Za-z0-9._~+/=-]{16,})", "[REDACTED]")
+          - replace_pattern(body, "((?i)[?&](key|api[_-]?key|apikey|token|access_token|auth|sig|signature|secret|password|awsaccesskeyid|x-amz-signature|x-amz-credential|x-amz-security-token|x-goog-signature|x-goog-credential)=)[^&[:space:]]+", "$${1}[REDACTED]")
           - replace_all_patterns(attributes, "value", "(sk-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{30,}|AIza[0-9A-Za-z_-]{35}|xox[abpors]-[A-Za-z0-9-]{10,}|eyJ[A-Za-z0-9_-]{8,}[.][A-Za-z0-9_-]{8,}[.][A-Za-z0-9_-]{8,}|(?i:bearer)[[:space:]]+[A-Za-z0-9._~+/=-]{16,})", "[REDACTED]")
+          - replace_all_patterns(attributes, "value", "((?i)[?&](key|api[_-]?key|apikey|token|access_token|auth|sig|signature|secret|password|awsaccesskeyid|x-amz-signature|x-amz-credential|x-amz-security-token|x-goog-signature|x-goog-credential)=)[^&[:space:]]+", "$${1}[REDACTED]")
     metric_statements:
+      - context: resource
+        statements:
+          - replace_all_patterns(attributes, "value", "(sk-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{30,}|AIza[0-9A-Za-z_-]{35}|xox[abpors]-[A-Za-z0-9-]{10,}|eyJ[A-Za-z0-9_-]{8,}[.][A-Za-z0-9_-]{8,}[.][A-Za-z0-9_-]{8,}|(?i:bearer)[[:space:]]+[A-Za-z0-9._~+/=-]{16,})", "[REDACTED]")
+          - replace_all_patterns(attributes, "value", "((?i)[?&](key|api[_-]?key|apikey|token|access_token|auth|sig|signature|secret|password|awsaccesskeyid|x-amz-signature|x-amz-credential|x-amz-security-token|x-goog-signature|x-goog-credential)=)[^&[:space:]]+", "$${1}[REDACTED]")
       - context: datapoint
         statements:
           - replace_all_patterns(attributes, "value", "(sk-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{30,}|AIza[0-9A-Za-z_-]{35}|xox[abpors]-[A-Za-z0-9-]{10,}|eyJ[A-Za-z0-9_-]{8,}[.][A-Za-z0-9_-]{8,}[.][A-Za-z0-9_-]{8,}|(?i:bearer)[[:space:]]+[A-Za-z0-9._~+/=-]{16,})", "[REDACTED]")
+          - replace_all_patterns(attributes, "value", "((?i)[?&](key|api[_-]?key|apikey|token|access_token|auth|sig|signature|secret|password|awsaccesskeyid|x-amz-signature|x-amz-credential|x-amz-security-token|x-goog-signature|x-goog-credential)=)[^&[:space:]]+", "$${1}[REDACTED]")
 
 exporters:
   # Your real backend goes here. For the traceleakcheck proof, it's the receiver on TLC_PORT.

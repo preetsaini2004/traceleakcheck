@@ -68,3 +68,40 @@ jobs:
         run: |
           test "${{ steps.demo.outcome }}" = failure
           python -c "import json,sys; s=json.load(open('traceleak-report.json'))['summary']; sys.exit(0 if s['leak']==1 else 1)"
+
+  collector:
+    # Proves examples/collector/redact.yaml: the Node demo's --proof mode leaks through every channel
+    # without the Collector, and comes out clean through it.
+    runs-on: ubuntu-latest
+    env:
+      OTELCOL_VERSION: "0.164.0"
+      TLC_PORT: "4400"
+      PROOF: >-
+        --settle 3 --expect traces,logs,metrics --secret OPENAI_API_KEY --secret DB_PASSWORD=password -v
+        -- node examples/node_agent/app.js --proof
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - run: npm ci
+        working-directory: examples/node_agent
+      - run: uv sync
+      - name: Install otelcol-contrib
+        run: |
+          curl -sSfL "https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v${OTELCOL_VERSION}/otelcol-contrib_${OTELCOL_VERSION}_linux_amd64.tar.gz" \
+            | tar -xz otelcol-contrib
+      - run: ./otelcol-contrib validate --config examples/collector/redact.yaml
+      - name: Without the Collector, --proof must leak
+        run: |
+          set +e
+          uv run traceleakcheck run $PROOF
+          test $? -eq 1
+      - name: Through the Collector, --proof must be clean
+        run: |
+          ./otelcol-contrib --config examples/collector/redact.yaml > otelcol.log 2>&1 &
+          sleep 3
+          uv run traceleakcheck run --port $TLC_PORT --app-endpoint http://127.0.0.1:4318 $PROOF
+      - if: failure()
+        run: cat otelcol.log || true

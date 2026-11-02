@@ -12,21 +12,26 @@ const sdk = new NodeSDK({ serviceName: "node-agent" });
 sdk.start();
 const tracer = trace.getTracer("node-agent");
 
+// DB_PASSWORD has no recognisable shape: only a query-parameter rule can catch it, so --proof sends
+// this URL through every channel (span attribute, error event and status, log body and attribute,
+// metric attribute) to prove the rule runs on each of them.
+const pwUrl = () => `https://gateway.example/v1/chat?token=${process.env.DB_PASSWORD || ""}&model=gpt`;
+
 async function callLlm(prompt) {
   const key = process.env.OPENAI_API_KEY;
-  throw new Error(`401 from gateway: invalid api key ${key}`);
+  const via = proof ? ` (via ${pwUrl()})` : "";
+  throw new Error(`401 from gateway${via}: invalid api key ${key}`);
 }
 
 function leakEverywhere(span, key) {
   span.setAttribute("llm.prompt", `use this key: ${key}`);
-  // DB_PASSWORD has no recognisable shape: only a query-parameter rule can catch it here.
-  const pw = process.env.DB_PASSWORD || "";
-  span.setAttribute("http.url", `https://gateway.example/v1/chat?key=${key}&token=${pw}&model=gpt`);
+  span.setAttribute("http.url", `https://gateway.example/v1/chat?key=${key}&model=gpt`);
+  span.setAttribute("url.full", pwUrl());
   logs.getLogger("node-agent").emit({
-    body: `calling gateway with ${key}`,
-    attributes: { "request.auth": `Bearer ${key}` },
+    body: `calling gateway with ${key}, then ${pwUrl()}`,
+    attributes: { "request.auth": `Bearer ${key}`, "url.full": pwUrl() },
   });
-  metrics.getMeter("node-agent").createCounter("llm.calls").add(1, { "llm.key": key });
+  metrics.getMeter("node-agent").createCounter("llm.calls").add(1, { "llm.key": key, "url.full": pwUrl() });
 }
 
 async function main() {

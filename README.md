@@ -126,7 +126,7 @@ traceleakcheck run --ready-url http://localhost:3000/health \
 
 **The control is weaker than in pytest.** traceleakcheck can't send a marker from inside another process. It checks that telemetry arrived on every expected signal and prints how many spans, logs and metrics it scanned. An app that exits without flushing loses its last batch, so make sure it shuts the SDK down (Node: `await sdk.shutdown()`). See [examples/node_agent](https://github.com/preetsaini2004/traceleakcheck/tree/main/examples/node_agent) for a leaking Node app, and the Action's `command:` input for CI.
 
-**The fix for any language** is an OpenTelemetry Collector between your app and your backend. [examples/collector/redact.yaml](https://github.com/preetsaini2004/traceleakcheck/blob/main/examples/collector/redact.yaml) removes well-known key formats and credential query parameters from span names, attributes, error events, status messages, logs and metrics.
+**The fix for any language** is an OpenTelemetry Collector between your app and your backend. [examples/collector/redact.yaml](https://github.com/preetsaini2004/traceleakcheck/blob/main/examples/collector/redact.yaml) removes well-known key formats and credential query parameters from span names, attributes, error events, status messages, log bodies and attributes, metric attributes, and resource attributes.
 
 To prove it covers your app, run the app through the Collector and the Collector into traceleakcheck. Start the Collector ([otelcol-contrib](https://github.com/open-telemetry/opentelemetry-collector-releases/releases)) with the receiver's port in `TLC_PORT`, then:
 
@@ -135,7 +135,7 @@ TLC_PORT=4400 otelcol-contrib --config examples/collector/redact.yaml &
 traceleakcheck run --port 4400 --app-endpoint http://127.0.0.1:4318 -- node app.js
 ```
 
-On Windows, [examples/collector/prove.ps1](https://github.com/preetsaini2004/traceleakcheck/blob/main/examples/collector/prove.ps1) does both steps against the Node demo's `--proof` mode, which leaks the key through every channel above. Without the Collector, that mode leaks in **9** places, including a password with no known shape in `?token=`. With it, the result is ✅ **clean** (tested with otelcol-contrib 0.164.0).
+On Windows, [examples/collector/prove.ps1](https://github.com/preetsaini2004/traceleakcheck/blob/main/examples/collector/prove.ps1) does both steps against the Node demo's `--proof` mode. That mode leaks the key through every channel above, and also sends a password with no known shape in a `?token=` URL through each of them, so only the query-parameter rule can catch it. Without the Collector it leaks; with it, the result is ✅ **clean**. CI runs this proof on every push with otelcol-contrib 0.164.0.
 
 ## Tested on real code
 
