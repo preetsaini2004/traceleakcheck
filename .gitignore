@@ -5,3 +5,4 @@ dist/
 .pytest_cache/
 graphify-out/
 survey/results/
+report.html
