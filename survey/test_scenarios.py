@@ -38,6 +38,25 @@ def test_secret_in_tool_call_arguments(canary, fake, client):
     _ask(client())
 
 
+def test_secret_in_streamed_completion(canary, fake, client):
+    """The reply is streamed, and the secret is split across two chunks: it only shows up if the
+    instrumentation reassembles the stream."""
+    secret = canary().value
+    fake.reply(200, ["The key in the doc is ", secret[:12], secret[12:], "."])
+    stream = client().chat.completions.create(model=MODEL, stream=True,
+                                              messages=[{"role": "user", "content": "hi"}])
+    assert "".join(c.choices[0].delta.content or "" for c in stream if c.choices).endswith(f"{secret}.")
+
+
+def test_streamed_reply_abandoned_early(canary, fake, client):
+    """The app reads the first chunk (which holds the secret) and drops the stream unclosed."""
+    secret = canary().value
+    fake.reply(200, [f"Key: {secret}", " and more", " text."])
+    stream = client().chat.completions.create(model=MODEL, stream=True,
+                                              messages=[{"role": "user", "content": "hi"}])
+    next(iter(stream))
+
+
 def test_api_key_in_auth_header(canary, fake, client):
     """The client's own API key, sent as `Authorization: Bearer`."""
     secret = canary().value

@@ -13,6 +13,8 @@ Versions tested: openai 2.54.0, opentelemetry-sdk 1.45.2, opentelemetry-instrume
 | Secret pasted in the prompt | clean | **leak** | clean | **leak** | clean | **leak** | clean | **leak** | clean |
 | Secret repeated in the completion | clean | **leak** | clean | **leak** | clean | **leak** | clean | **leak** | clean |
 | Secret in tool-call arguments | clean | **leak** | clean | **leak** | clean | **leak** | clean | **leak** | clean |
+| Secret in a streamed reply, split across chunks | clean | **leak** | clean | **leak** | clean | **leak** | clean | **leak** | clean |
+| Streamed reply abandoned after the first chunk | *open span* | *open span* | *open span* | **leak** | clean | **leak** | clean | clean | clean |
 | API key in `Authorization` header | clean | clean | clean | clean | clean | clean | clean | clean | clean |
 | API key in URL query (`?key=`) | clean | clean | clean | clean | clean | clean | clean | clean | **leak** |
 | Error message echoes the API key | **leak** | **leak** | **leak** | **leak** | **leak** | **leak** | **leak** | **leak** | clean |
@@ -68,6 +70,17 @@ Related but different: [#4038](https://github.com/open-telemetry/opentelemetry-p
 
 Separately, openai-v2 imports `httpx`, which the `openai` SDK 3.x no longer depends on (it moved to `httpx2`). We tested on openai 2.54.0 for that reason.
 
+### 6. Streaming: split secrets are reassembled, and an abandoned stream can hide a leak
+
+**Split across chunks.** Every instrumentation that records content reassembles a streamed reply. A secret split across two chunks therefore shows up whole in the exported data, and traceleakcheck finds it.
+
+**Abandoned stream.** Here the app reads only the first chunk and drops the stream.
+- **OpenLLMetry and OpenInference** end the span and export what was received, including the secret.
+- **Logfire** ends the span without the partial reply, so that result is genuinely clean.
+- **OTel openai-v2 leaves the span open.** An open span is never exported, so whatever it holds is invisible to any exporter, and to any leak checker.
+
+In our first streaming run, that openai-v2 case came back as a **false "clean"**. traceleakcheck now tracks spans that start during a test and never end, and reports `incomplete` ("1 span(s) were still open … 'chat gpt-4o-mini'") instead.
+
 ## What was clean everywhere
 
 The client's own API key in the `Authorization` header never appeared in any export. No instrumentation records request headers by default.
@@ -75,7 +88,7 @@ The client's own API key in the `Authorization` header never appeared in any exp
 ## Method and limits
 
 - **Fake server:** a local fake OpenAI server returns canned completions, tool calls and errors. No real API was called.
-- **Non-streaming only:** we tested only non-streaming chat completions, plus a 401 error path.
+- **Calls covered:** non-streaming and streaming chat completions (SSE), a stream abandoned after one chunk, and a 401 error path.
 - **Fresh secrets:** each scenario plants a fresh canary in a realistic `sk-proj-…` format.
 - **Encoded leaks counted:** findings include encoded forms, but every leak above was raw.
 - **Default exporter settings:** attribute length limits weren't changed, so nothing was truncated.

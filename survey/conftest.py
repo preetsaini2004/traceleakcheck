@@ -93,11 +93,23 @@ _instrument()
 
 
 class _FakeOpenAI(BaseHTTPRequestHandler):
-    reply: tuple[int, dict] = (500, {})
+    reply: tuple[int, dict | list[str]] = (500, {})
 
     def do_POST(self):  # noqa: N802
         self.rfile.read(int(self.headers.get("Content-Length") or 0))
         status, body = _FakeOpenAI.reply
+        if isinstance(body, list):  # a streamed reply: one server-sent event per text chunk
+            self.send_response(status)
+            self.send_header("Content-Type", "text/event-stream")
+            self.end_headers()
+            for i, text in enumerate(body + [None]):
+                delta = {"role": "assistant", "content": text} if i == 0 else ({"content": text} if text else {})
+                chunk = {"id": "chatcmpl-1", "object": "chat.completion.chunk", "created": 0,
+                         "model": "gpt-4o-mini", "choices": [{"index": 0, "delta": delta,
+                                                              "finish_reason": None if text else "stop"}]}
+                self.wfile.write(f"data: {json.dumps(chunk)}\n\n".encode())
+            self.wfile.write(b"data: [DONE]\n\n")
+            return
         out = json.dumps(body).encode()
         self.send_response(status)
         self.send_header("Content-Type", "application/json")

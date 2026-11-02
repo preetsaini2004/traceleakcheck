@@ -35,6 +35,8 @@ SCENARIOS = [  # (test name, label)
     ("test_secret_in_prompt", "Secret pasted in the prompt"),
     ("test_secret_in_completion", "Secret repeated in the completion"),
     ("test_secret_in_tool_call_arguments", "Secret in tool-call arguments"),
+    ("test_secret_in_streamed_completion", "Secret in a streamed reply, split across chunks"),
+    ("test_streamed_reply_abandoned_early", "Streamed reply abandoned after the first chunk"),
     ("test_api_key_in_auth_header", "API key in `Authorization` header"),
     ("test_api_key_in_query_string", "API key in URL query (`?key=`)"),
     ("test_error_message_echoes_key", "Error body echoes the API key"),
@@ -73,7 +75,8 @@ def _field(f: dict) -> str:
 # means the capture setting silently did nothing; the first run hit exactly that with openai-v2 `=true`.
 CAPTURES_CONTENT = {("otel-openai-v2", "content"), ("openllmetry", "default"),
                     ("openinference", "default"), ("logfire", "default")}
-CONTENT_SCENARIOS = {t for t, _ in SCENARIOS[:3]}
+# Non-streamed only: these validate the capture config itself; streaming results are findings.
+CONTENT_SCENARIOS = {"test_secret_in_prompt", "test_secret_in_completion", "test_secret_in_tool_call_arguments"}
 
 
 def cell(report: dict | None, test: str, config: tuple[str, str]) -> str:

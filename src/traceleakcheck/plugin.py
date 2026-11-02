@@ -33,6 +33,17 @@ class TraceLeak:
         self.receiver = OTLPReceiver().start()
         self.providers: list = []
         self._saved_env: dict[str, str | None] = {}
+        self._open = _OpenSpans()
+        self._tracked: set[int] = set()
+
+    def start_test(self) -> None:
+        """Called at test setup: forget earlier exports and start counting this test's open spans."""
+        self.receiver.clear()
+        for p in self._all_providers():
+            if hasattr(p, "add_span_processor") and id(p) not in self._tracked:
+                p.add_span_processor(self._open)
+                self._tracked.add(id(p))
+        self._open.spans.clear()
 
     @property
     def endpoint(self) -> str:
@@ -104,6 +115,7 @@ class TraceLeak:
         from .receiver import ReceiverError
 
         pipelines = self._pipelines(ignore)
+        still_open = list(self._open.spans.values())  # before the markers start spans of their own
         # Positive control: a marker sent through EVERY configured pipeline must arrive, or a
         # broken logs pipeline could hide a leak behind a working traces pipeline. The nonce is
         # unique per check, so a late export from another test can't satisfy it.
@@ -129,6 +141,14 @@ class TraceLeak:
                 "detail": "no OTel SDK provider is configured, so nothing could be exported and a clean "
                 "result can't be claimed. Configure the SDK, or register providers with traceleak.watch().",
             }
+        if still_open:
+            names = ", ".join(f"'{n}'" for n in still_open[:3]) + (" ..." if len(still_open) > 3 else "")
+            return result | {
+                "status": "incomplete",
+                "detail": f"{len(still_open)} span(s) were still open when the test ended ({names}). Open "
+                "spans are never exported, so their contents couldn't be checked. Make the test finish "
+                "the work, e.g. read streamed replies to the end or close them.",
+            }
         arrived = {s for s, data in payloads if nonce in data.get(RAW_KEY, "")}
         missing = sorted({s for s, _ in pipelines} - arrived)
         if missing or unverifiable:
@@ -140,6 +160,29 @@ class TraceLeak:
                 "(or skip the signal with --traceleak-ignore)?",
             }
         return result
+
+
+class _OpenSpans:
+    """Span processor that remembers spans started but not yet ended (duck-typed, so the plugin
+    doesn't import the SDK)."""
+
+    def __init__(self):
+        self.spans: dict[int, str] = {}
+
+    def on_start(self, span, parent_context=None):
+        self.spans[span.context.span_id] = span.name
+
+    def on_end(self, span):
+        self.spans.pop(span.context.span_id, None)
+
+    def _on_ending(self, span):  # newer SDKs call this too
+        pass
+
+    def shutdown(self):
+        pass
+
+    def force_flush(self, timeout_millis: int = 30000) -> bool:
+        return True
 
 
 def _emit_marker(signal: str, provider, nonce: str) -> None:
@@ -209,7 +252,7 @@ def canary(request, traceleak):
 def pytest_runtest_setup(item):
     tl = item.config.stash.get(_STATE, None)
     if tl is not None:
-        tl.receiver.clear()  # each test only sees its own exports
+        tl.start_test()  # each test only sees its own exports and open spans
     return (yield)
 
 

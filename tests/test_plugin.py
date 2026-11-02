@@ -208,3 +208,13 @@ def test_demo_agent_is_clean_with_safety_filter(pytester):
     r = pytester.runpytest_subprocess("--traceleak", timeout=120)
     r.assert_outcomes(passed=2)
     r.stdout.fnmatch_lines(["*Result: 1 clean, 0 leak, 0 incomplete, 0 error*"])
+
+
+def test_span_left_open_is_incomplete_not_clean(pytester):
+    _make(pytester,
+          "def run(k):\n    s = tracer.start_span('chat')  # never ended: never exported\n    s.set_attribute('p', k)\n"
+          "    return s\n",
+          "from app import run\nkeep = []\ndef test_it(canary):\n    keep.append(run(canary().value))\n")
+    r = pytester.runpytest_subprocess("--traceleak", timeout=120)
+    r.assert_outcomes(passed=1, errors=1)
+    r.stdout.fnmatch_lines(["*COULDN'T CHECK*", "*1 span(s) were still open when the test ended ('chat')*"])

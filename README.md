@@ -72,7 +72,7 @@ Each test gets one verdict:
 |---|---|---|
 | ✅ `clean` | Every pipeline delivered its control marker, and no canary was found | passes |
 | 🚨 `leak` | A canary was found; the report names the step and field | fails |
-| ⚠️ `incomplete` | A pipeline's control marker never arrived, so "clean" can't be claimed | fails |
+| ⚠️ `incomplete` | A pipeline's control marker never arrived, or a span was still open at the end of the test (open spans are never exported), so "clean" can't be claimed | fails |
 | ⚠️ `error` | An export couldn't be decoded, so a scan would under-report | fails |
 
 pytest shows a failed check as `ERROR at teardown`, because it runs after the fixtures finish. It works with `pytest -n` (xdist). In GitHub Actions the verdicts also go to the job summary, and there's a ready-made [action](action.yml).
@@ -114,6 +114,7 @@ One secret becomes many copies, because every layer of an agent (chat step, agen
 - **`?key=` query auth is exported verbatim** in `http.url`.
 - **Logfire's default scrubbing skips LLM messages and exception messages**, even when they contain "API key".
 - **OTel openai-v2's documented legacy `CAPTURE_MESSAGE_CONTENT=true` falls back to `NO_CONTENT`** on util-genai 1.x, with only a log warning.
+- **Streamed replies are reassembled**, so a secret split across chunks still leaks. But **OTel openai-v2 never ends the span of an abandoned stream**, so its contents are never exported. traceleakcheck now reports that as `incomplete` instead of a false `clean`.
 
 ## Limits
 
