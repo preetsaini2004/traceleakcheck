@@ -94,6 +94,110 @@ def test_ordinary_text_untouched():
     assert s.text("GET /v1/chat?key=abc123&page=2") == f"GET /v1/chat?key={REDACTED}&page=2"
 
 
+def test_sigv4_presigned_url_scrubbed():
+    # The URL from opentelemetry-python-contrib#5279: every credential parameter must go.
+    url = ("https://bucket.s3.amazonaws.com/obj?X-Amz-Algorithm=AWS4-HMAC-SHA256"
+           "&X-Amz-Credential=AKIAEXAMPLE%2F20261101%2Fus-east-1%2Fs3%2Faws4_request"
+           "&X-Amz-Security-Token=FwoGZXIvYXdzEXAMPLETOKEN&X-Amz-Signature=abc123")
+    assert Scrubber(env=False).text(url) == (
+        "https://bucket.s3.amazonaws.com/obj?X-Amz-Algorithm=AWS4-HMAC-SHA256"
+        f"&X-Amz-Credential={REDACTED}&X-Amz-Security-Token={REDACTED}&X-Amz-Signature={REDACTED}")
+
+
+@pytest.mark.parametrize("param", ["AWSAccessKeyId", "Signature", "sig", "X-Goog-Signature",
+                                   "X-Goog-Credential", "x-amz-signature"])
+def test_semconv_query_params_scrubbed(param):
+    assert Scrubber(env=False).text(f"https://x.example/o?a=1&{param}=s3cr3tval") == \
+        f"https://x.example/o?a=1&{param}={REDACTED}"
+
+
+def test_plain_env_values_not_scrubbed(monkeypatch):
+    plain = {
+        "DEPLOY_KEY_NAME": "production",
+        "KMS_KEY_REGION": "us-east-1",
+        "TOKEN_AUDIENCE": "My-Service",
+        "TOKEN_TTL_SECONDS": "86400000",
+        "SSH_AUTH_SOCK": "/run/user/1000/ssh-agent.socket",
+        "DB_PASSWORD_FILE": "/run/secrets/db_password",
+        "SSH_KEY_PATH": "~/.ssh/id_ed25519",
+        "TLS_KEY_FILE": "./certs/server.key",
+        "WIN_KEY_FILE": "C:\\keys\\server.pem",
+        "SHARE_AUTH_PATH": "\\\\fileserver\\keys",
+        "AUTH_URL": "https://auth.example.com/login",
+    }
+    for k, v in plain.items():
+        monkeypatch.setenv(k, v)
+    s = Scrubber()
+    for v in plain.values():
+        assert s.text(f"value={v}!") == f"value={v}!"
+
+
+@pytest.mark.parametrize("name,value", [
+    ("SERVICE_API_KEY", "Zx81kQp2Lm9vRt4W"),          # random-looking
+    ("DB_PASSWORD", "correcthorsebattery"),           # plain word, but the name is unambiguous
+    ("ADMIN_PASSWORD", "correct horse battery"),      # a passphrase with spaces
+    ("CLIENT_SECRET", "production"),
+    ("REDIS_AUTH_URL", "redis://:hunter2hunter2@cache:6379/0"),  # a URL carrying a password
+    ("DB_PASSWORD", "/Xy9!secretpw"),                 # starts like a path, but isn't one
+    ("ADMIN_PASSWORD", "~kQp2Lm9vRt"),
+    ("SERVICE_API_KEY", ".Zx81kQp2Lm9v"),
+])
+def test_secret_env_values_still_scrubbed(monkeypatch, name, value):
+    monkeypatch.setenv(name, value)
+    assert Scrubber().text(f"got {value} here") == f"got {REDACTED} here"
+
+
+def test_env_read_once_per_export_not_per_string(monkeypatch):
+    c, d = make_canary("password"), make_canary("password")
+    monkeypatch.setenv("MY_SERVICE_PASSWORD", c.value)
+    s = Scrubber()
+    assert s.text(c.value) == REDACTED
+    monkeypatch.setenv("LATE_PASSWORD", d.value)
+    assert s.text(d.value) == d.value  # cached: no environment scan per string
+    s.refresh()  # what every export() does
+    assert s.text(d.value) == REDACTED
+
+
+def test_secret_set_while_running_scrubbed_on_next_export(monkeypatch):
+    c = make_canary("password")
+    with OTLPReceiver() as rx:
+        exp = scrub(OTLPSpanExporter(endpoint=rx.endpoint + "/v1/traces"))
+        p = TracerProvider()
+        p.add_span_processor(SimpleSpanProcessor(exp))
+        t = p.get_tracer("t")
+        t.start_span("first").end()
+        monkeypatch.setenv("LATE_SECRET", c.value)
+        t.start_span("second", attributes={"x": c.value}).end()
+        p.shutdown()
+        assert scan(rx.snapshot(), [c]) == []
+
+
+def test_resource_and_link_attributes_scrubbed():
+    from opentelemetry.sdk.resources import Resource
+    from opentelemetry.trace import Link
+
+    c = make_canary("password")
+    res = Resource({"service.name": "shop", "deploy.token": c.value})
+    with OTLPReceiver() as rx:
+        p = TracerProvider(resource=res)
+        p.add_span_processor(SimpleSpanProcessor(
+            scrub(OTLPSpanExporter(endpoint=rx.endpoint + "/v1/traces"), secrets=[c.value])))
+        t = p.get_tracer("t")
+        parent = t.start_span("parent")
+        t.start_span("child", links=[Link(parent.get_span_context(), {"why": c.value})]).end()
+        parent.end()
+        lp = LoggerProvider(resource=res)
+        lp.add_log_record_processor(SimpleLogRecordProcessor(
+            scrub(OTLPLogExporter(endpoint=rx.endpoint + "/v1/logs"), secrets=[c.value])))
+        lp.get_logger("t").emit(LogRecord(body="hello"))
+        p.shutdown()
+        lp.shutdown()
+        payloads = rx.snapshot()
+    assert {sig for sig, _ in payloads} >= {"traces", "logs"}
+    assert scan(payloads, [c]) == []
+    assert "shop" in str(payloads)  # the rest of the resource survives
+
+
 def test_rejects_non_exporters():
     with pytest.raises(TypeError):
         scrub(object())

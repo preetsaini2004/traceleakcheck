@@ -7,12 +7,16 @@ Wrap the exporter you already use, in your app (not just in tests):
     logger_provider.add_log_record_processor(BatchLogRecordProcessor(scrub(OTLPLogExporter())))
 
 What gets removed, everywhere in a span (name, attributes, event attributes such as
-exception.message / exception.stacktrace, status message) and in log records (body, attributes):
+exception.message / exception.stacktrace, status message, link attributes, resource attributes)
+and in log records (body, attributes, resource attributes):
   1. Known secrets: values of environment variables whose name contains KEY, TOKEN, SECRET,
      PASSWORD, CREDENTIAL or AUTH, plus anything passed to add_secret() or scrub(secrets=...),
-     including their base64 / URL / hex forms.
+     including their base64 / URL / hex forms. Env values that are plainly not secrets (file
+     paths, URLs without a password, and, for KEY / TOKEN / CREDENTIAL / AUTH names, plain
+     words, slugs and numbers such as "production" or "us-east-1") are left alone, so they
+     aren't scrubbed out of every trace. Register anything else with add_secret().
   2. Well-known key formats (OpenAI, Anthropic, AWS, GitHub, Google, Slack, JWT, Bearer) and
-     credential query parameters such as ?key=... in URLs.
+     credential query parameters such as ?key=... or ?X-Amz-Signature=... in URLs.
 
 It cannot know about secrets that match neither, so keep running `pytest --traceleak`: the filter
 is the fix, traceleakcheck is the proof. Metrics are not filtered.
@@ -26,9 +30,10 @@ import os
 import re
 from collections.abc import Iterable, Mapping, Sequence
 
+from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import Event, ReadableSpan
 from opentelemetry.sdk.trace.export import SpanExporter, SpanExportResult
-from opentelemetry.trace import Status
+from opentelemetry.trace import Link, Status
 
 from .canary import encoded_forms
 
@@ -45,11 +50,36 @@ _PATTERNS = [
 ]
 _KEEP_PREFIX = [  # keep the label, drop the value
     re.compile(r"(?i)(\bbearer\s+)[A-Za-z0-9._~+/=\-]{16,}"),
-    re.compile(r"(?i)([?&](?:key|api[_\-]?key|apikey|token|access_token|auth|sig|signature|secret|password)=)"
+    # Includes every key the OTel semantic conventions say SHOULD be redacted from url.query.
+    re.compile(r"(?i)([?&](?:key|api[_\-]?key|apikey|token|access_token|auth|sig|signature|secret|password"
+               r"|awsaccesskeyid|x-amz-signature|x-amz-credential|x-amz-security-token"
+               r"|x-goog-signature|x-goog-credential)=)"
                r"[^&#\s'\"]+"),
 ]
 _SECRET_ENV_NAME = re.compile(r"(?i)key|token|secret|passw(?:or)?d|credential|auth")
+_UNAMBIGUOUS_ENV_NAME = re.compile(r"(?i)secret|passw(?:or)?d")  # e.g. not KEYBOARD, SSH_AUTH_SOCK
 _MIN_SECRET_LEN = 8
+
+# Plain words, slugs and numbers: "production", "us-east-1", "PROD_EU", "My-Service", "30000000".
+_WORD = r"(?:[A-Za-z][a-z]*|[A-Z]+|[0-9]+)"
+_PLAIN_VALUE = re.compile(rf"{_WORD}(?:[-_.]{_WORD})*")
+# A path needs at least one folder (/run/secrets/db, ~/.ssh/key, ./certs/x, C:\keys\a, \\host\share),
+# so a password that merely starts with "/", "~" or "." is still treated as a secret.
+_PATH_VALUE = re.compile(r"(?:~|\.{1,2})?/[^/]+/|[A-Za-z]:[\\/][^\\/]+[\\/]|\\\\[^\\]+\\")
+
+
+def _env_secret(name: str, value: str) -> bool:
+    """Whether a secret-named env var's value should be scrubbed from telemetry."""
+    if len(value) < _MIN_SECRET_LEN:
+        return False
+    if _PATH_VALUE.match(value):  # SSH_AUTH_SOCK=/run/..., PASSWORD_FILE=/run/secrets/db
+        return False
+    if "://" in value:  # AUTH_URL=https://... is not a secret; redis://:pw@host is
+        return "@" in value
+    if _UNAMBIGUOUS_ENV_NAME.search(name):  # a passphrase may contain spaces
+        return True
+    return not any(ch.isspace() for ch in value) and not _PLAIN_VALUE.fullmatch(value)
+
 
 _registered: set[str] = set()
 
@@ -67,12 +97,17 @@ class Scrubber:
         self.patterns = patterns
         self._cache_key: frozenset[str] | None = None
         self._needles: list[str] = []
+        self._resources: dict[int, tuple[Resource, Resource]] = {}
 
-    def _known(self) -> list[str]:
+    def refresh(self) -> None:
+        """Re-read the environment and registered secrets.
+
+        Exporters call this once per batch, so a secret set or registered while the app runs is
+        picked up by the next export without scanning the environment for every string.
+        """
         values = set(self.secrets) | _registered
         if self.env:
-            values |= {v for k, v in os.environ.items()
-                       if _SECRET_ENV_NAME.search(k) and len(v) >= _MIN_SECRET_LEN}
+            values |= {v for k, v in os.environ.items() if _SECRET_ENV_NAME.search(k) and _env_secret(k, v)}
         key = frozenset(values)
         if key != self._cache_key:  # rebuild only when the set of secrets changed
             forms = set(values)
@@ -80,10 +115,12 @@ class Scrubber:
                 forms |= set(encoded_forms(v).values())
             self._needles = sorted(forms, key=len, reverse=True)  # longest first
             self._cache_key = key
-        return self._needles
+            self._resources.clear()
 
     def text(self, s: str) -> str:
-        for needle in self._known():
+        if self._cache_key is None:
+            self.refresh()
+        for needle in self._needles:
             if needle in s:
                 s = s.replace(needle, REDACTED)
         if self.patterns:
@@ -105,6 +142,19 @@ class Scrubber:
     def attrs(self, a):
         return None if a is None else self.value(dict(a))
 
+    def resource(self, r: Resource | None) -> Resource | None:
+        """Scrubbed copy of a resource, cached because every span and log shares the same one."""
+        if r is None:
+            return None
+        hit = self._resources.get(id(r))
+        if hit is not None and hit[0] is r:
+            return hit[1]
+        clean = Resource(self.attrs(r.attributes), r.schema_url)
+        if len(self._resources) > 64:
+            self._resources.clear()
+        self._resources[id(r)] = (r, clean)  # keep r alive so its id can't be reused
+        return clean
+
 
 class ScrubbingSpanExporter(SpanExporter):
     def __init__(self, inner: SpanExporter, scrubber: Scrubber):
@@ -116,14 +166,16 @@ class ScrubbingSpanExporter(SpanExporter):
         if status.description:
             status = Status(status.status_code, s.text(status.description))
         return ReadableSpan(
-            name=s.text(sp.name), context=sp.context, parent=sp.parent, resource=sp.resource,
+            name=s.text(sp.name), context=sp.context, parent=sp.parent, resource=s.resource(sp.resource),
             attributes=s.attrs(sp.attributes),
             events=[Event(s.text(e.name), s.attrs(e.attributes), e.timestamp) for e in sp.events],
-            links=sp.links, kind=sp.kind, status=status, start_time=sp.start_time,
+            links=[Link(lk.context, s.attrs(lk.attributes)) for lk in sp.links],
+            kind=sp.kind, status=status, start_time=sp.start_time,
             end_time=sp.end_time, instrumentation_scope=sp.instrumentation_scope,
         )
 
     def export(self, spans) -> SpanExportResult:
+        self.s.refresh()
         return self.inner.export([self._span(sp) for sp in spans])
 
     def shutdown(self) -> None:
@@ -148,13 +200,19 @@ class _ScrubbingLogExporterMixin:
         lr = copy.copy(item.log_record)
         lr.body = self.s.value(lr.body)
         lr.attributes = self.s.attrs(lr.attributes)
+        if isinstance(getattr(lr, "resource", None), Resource):  # older SDKs keep it on the record
+            lr.resource = self.s.resource(lr.resource)
         if dataclasses.is_dataclass(item):  # newer SDKs: a frozen ReadableLogRecord
-            return dataclasses.replace(item, log_record=lr)
+            changes = {"log_record": lr}
+            if isinstance(getattr(item, "resource", None), Resource):
+                changes["resource"] = self.s.resource(item.resource)
+            return dataclasses.replace(item, **changes)
         item = copy.copy(item)  # older SDKs: a mutable LogData
         item.log_record = lr
         return item
 
     def export(self, batch):
+        self.s.refresh()
         return self.inner.export([self._record(x) for x in batch])
 
     def shutdown(self):

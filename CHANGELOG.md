@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Safety filter (`scrub()`)
+- Removes every query parameter the OpenTelemetry semantic conventions say to redact. Before, `X-Amz-Signature`, `X-Amz-Security-Token` and `X-Goog-Signature` in S3/GCS presigned URLs were exported unchanged: the same gap as [opentelemetry-python-contrib#5279](https://github.com/open-telemetry/opentelemetry-python-contrib/issues/5279).
+- Env values that are plainly not secrets are no longer scrubbed from every string. Before, `DEPLOY_KEY_NAME=production` turned `region=production-eu` into `region=[REDACTED]-eu`. Skipped: file paths, URLs without a password, and plain words, slugs and numbers under `*KEY*` / `*TOKEN*` / `*AUTH*` / `*CREDENTIAL*` names. `*SECRET*` and `*PASSWORD*` values are still always scrubbed.
+- About 48x faster: the environment is read once per export batch, not once per string (258 µs to 5.4 µs per string).
+- Also scrubs resource attributes and span link attributes.
+
 ## 0.2.0 (2026-11-02)
 
 ### Any language
