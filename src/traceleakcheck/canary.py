@@ -26,6 +26,7 @@ _GENERATORS = {
     "anthropic": lambda: "sk-ant-api03-" + _rand(86),
     "aws": lambda: "AKIA" + _rand(16, _UPPER_ALNUM),
     "github": lambda: "ghp_" + _rand(36),
+    "azure": lambda: secrets.token_hex(16),  # Azure OpenAI keys: 32 hex chars, no prefix
     "jwt": lambda: ".".join(
         [
             _b64url(b'{"alg":"HS256","typ":"JWT"}'),
@@ -45,6 +46,7 @@ _STATIC_LEN = {
     "anthropic": len("sk-ant-api03-"),
     "aws": len("AKIA"),
     "github": len("ghp_"),
+    "azure": 0,
     "jwt": len(_b64url(b'{"alg":"HS256","typ":"JWT"}')) + 1 + len(_b64url(b'{"sub":"tlc-')),
     "password": len("tlc-pw-"),
 }

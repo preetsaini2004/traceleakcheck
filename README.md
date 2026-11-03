@@ -64,7 +64,7 @@ If your app configures OpenTelemetry from the standard `OTEL_EXPORTER_OTLP_*` se
 <p align="center"><img src="https://raw.githubusercontent.com/preetsaini2004/traceleakcheck/main/docs/readme/how-it-works.svg" alt="How it works: a canary fake key goes into your unchanged app, the app exports OTLP over HTTP or gRPC to a local receiver, every field is scanned, and the result is leak, clean or incomplete" width="100%"></p>
 
 1. **Before your `conftest.py` loads**, `--traceleak` starts a receiver and points the app's exporters at it.
-2. **Each test** that asks for a `canary` gets unique fake secrets in realistic formats: OpenAI, Anthropic, AWS, GitHub, JWT or password.
+2. **Each test** that asks for a `canary` gets unique fake secrets in realistic formats: OpenAI, Anthropic, Azure OpenAI, AWS, GitHub, JWT or password.
 3. **After the test and its fixtures finish**, a control marker is sent through every configured pipeline (traces, logs, metrics), everything is flushed, and every exported field is searched.
 
 Each test gets one verdict:
@@ -119,7 +119,7 @@ traceleakcheck run --ready-url http://localhost:3000/health \
 
 | Option | What it does |
 |---|---|
-| `--secret ENV[=KIND]` | Env var to fill with a fake secret: `openai` (default), `anthropic`, `aws`, `github`, `jwt` or `password`. Repeatable. |
+| `--secret ENV[=KIND]` | Env var to fill with a fake secret: `openai` (default), `anthropic`, `azure`, `aws`, `github`, `jwt` or `password`. Repeatable. |
 | `--drive CMD`, `--ready-url URL` | Treat the app as a server: wait until it answers, run `CMD`, then stop it, including child processes. |
 | `--expect traces,logs` | Signals that must arrive, or the result is "couldn't check" (default: `traces`). |
 | `--html`, `--report`, `-v` | HTML report, JSON report, exact field paths. |
